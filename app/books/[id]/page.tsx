@@ -263,7 +263,7 @@ export default function BookReaderPage({ params }: { params: Promise<{ id: strin
         </div>
 
         {/* Content Area */}
-        <div className="flex-1 overflow-y-auto p-4 md:p-8 pb-24 md:pb-8">
+        <div className="flex-1 overflow-y-auto p-4 md:p-8">
           {isLoading ? (
             <div className="space-y-4">
               {Array.from({ length: 3 }).map((_, i) => (
@@ -287,26 +287,26 @@ export default function BookReaderPage({ params }: { params: Promise<{ id: strin
           )}
         </div>
 
-        {/* Pagination Controls - Fixed to bottom on mobile, inline on desktop */}
+        {/* Pagination Controls - Always visible and handy */}
         {totalPages > 1 && (
-          <div className="border-t border-border bg-card p-4 flex items-center justify-between md:relative fixed bottom-0 left-0 right-0 z-10 md:z-auto">
+          <div className="sticky bottom-0 border-t border-border bg-card/95 backdrop-blur-sm p-4 flex items-center justify-between shadow-lg">
             <button
               onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
               disabled={currentPage === 1}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-accent text-accent-foreground disabled:opacity-50 disabled:cursor-not-allowed hover:scale-105 transition-transform font-arabic-sans"
+              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-accent text-accent-foreground disabled:opacity-50 disabled:cursor-not-allowed hover:scale-105 transition-transform font-arabic-sans shadow-sm"
             >
               <ChevronRight className="w-5 h-5" />
               السابق
             </button>
             
-            <span className="font-arabic-sans">
+            <span className="font-arabic-sans font-semibold">
               صفحة {currentPage} من {totalPages}
             </span>
             
             <button
               onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
               disabled={currentPage === totalPages}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-accent text-accent-foreground disabled:opacity-50 disabled:cursor-not-allowed hover:scale-105 transition-transform font-arabic-sans"
+              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-accent text-accent-foreground disabled:opacity-50 disabled:cursor-not-allowed hover:scale-105 transition-transform font-arabic-sans shadow-sm"
             >
               التالي
               <ChevronLeft className="w-5 h-5" />
