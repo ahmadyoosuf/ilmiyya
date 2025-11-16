@@ -1,0 +1,5538 @@
+This file is a merged representation of the entire codebase, combined into a single document by Repomix.
+
+<file_summary>
+This section contains a summary of this file.
+
+<purpose>
+This file contains a packed representation of the entire repository's contents.
+It is designed to be easily consumable by AI systems for analysis, code review,
+or other automated processes.
+</purpose>
+
+<file_format>
+The content is organized as follows:
+1. This summary section
+2. Repository information
+3. Directory structure
+4. Repository files (if enabled)
+5. Multiple file entries, each consisting of:
+  - File path as an attribute
+  - Full contents of the file
+</file_format>
+
+<usage_guidelines>
+- This file should be treated as read-only. Any changes should be made to the
+  original repository files, not this packed version.
+- When processing this file, use the file path to distinguish
+  between different files in the repository.
+- Be aware that this file may contain sensitive information. Handle it with
+  the same level of security as you would the original repository.
+</usage_guidelines>
+
+<notes>
+- Some files may have been excluded based on .gitignore rules and Repomix's configuration
+- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
+- Files matching patterns in .gitignore are excluded
+- Files matching default ignore patterns are excluded
+- Files are sorted by Git change count (files with more changes are at the bottom)
+</notes>
+
+</file_summary>
+
+<directory_structure>
+.gitignore
+app/books/[id]/page.tsx
+app/books/category/[id]/page.tsx
+app/books/page.tsx
+app/globals.css
+app/layout.tsx
+app/page.tsx
+app/search/page.tsx
+app/topics/[id]/page.tsx
+app/topics/page.tsx
+components.json
+components/BookCard.tsx
+components/BottomNav.tsx
+components/Header.tsx
+components/Pagination.tsx
+components/ThemeSwitcher.tsx
+components/Tree.tsx
+components/ui/button.tsx
+components/ui/card.tsx
+components/ui/dialog.tsx
+components/ui/dropdown-menu.tsx
+components/ui/input.tsx
+components/ui/label.tsx
+components/ui/scroll-area.tsx
+components/ui/separator.tsx
+components/ui/sheet.tsx
+components/ui/skeleton.tsx
+components/ui/textarea.tsx
+components/ui/toast.tsx
+components/ui/toaster.tsx
+components/ui/toggle-group.tsx
+components/ui/toggle.tsx
+components/ui/tooltip.tsx
+components/ui/use-mobile.tsx
+components/ui/use-toast.ts
+hooks/use-mobile.ts
+hooks/use-toast.ts
+lib/supabase/client.ts
+lib/supabase/server.ts
+lib/supabase/types.ts
+lib/utils.ts
+migrations/001_create_schema.sql
+migrations/002_fix_hadiths_pk.sql
+migrations/003_pivot_hadith_topics.sql
+migrations/004_tid_schema.sql
+next.config.mjs
+package.json
+postcss.config.mjs
+README.md
+styles/globals.css
+supabase/.temp/cli-latest
+supabase/.temp/gotrue-version
+supabase/.temp/pooler-url
+supabase/.temp/postgres-version
+supabase/.temp/project-ref
+supabase/.temp/rest-version
+supabase/.temp/storage-migration
+supabase/.temp/storage-version
+tsconfig.json
+</directory_structure>
+
+<files>
+This section contains the contents of the repository's files.
+
+<file path=".gitignore">
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+/node_modules
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# env files
+.env*
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+.vercel
+</file>
+
+<file path="app/books/[id]/page.tsx">
+'use client'
+
+import { use, useEffect, useState } from 'react'
+import { useSearchParams } from 'next/navigation'
+import Link from 'next/link'
+import { getSupabaseBrowserClient } from '@/lib/supabase/client'
+import { Database } from '@/lib/supabase/types'
+import { Tree, TreeNode } from '@/components/Tree'
+import { ChevronLeft, ChevronRight, Menu, X } from 'lucide-react'
+import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet'
+
+type Book = Database['public']['Tables']['books']['Row']
+type Hadith = Database['public']['Tables']['hadiths']['Row']
+
+interface TOCStructure {
+  parts: Map<string, Set<string>>
+}
+
+const HADITHS_PER_PAGE = 1
+
+export default function BookReaderPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = use(params)
+  const searchParams = useSearchParams()
+  const [book, setBook] = useState<Book | null>(null)
+  const [hadiths, setHadiths] = useState<Hadith[]>([])
+  const [tocTree, setTocTree] = useState<TreeNode[]>([])
+  const [currentPage, setCurrentPage] = useState(1)
+  const [totalPages, setTotalPages] = useState(1)
+  const [selectedPart, setSelectedPart] = useState<string | null>(null)
+  const [selectedPage, setSelectedPage] = useState<string | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false)
+  const [backLink, setBackLink] = useState<string | null>(null)
+
+  const supabase = getSupabaseBrowserClient()
+
+  // Handle deep-linking by global_tid
+  useEffect(() => {
+    async function handleDeepLink() {
+      const tid = searchParams.get('tid')
+      const fromTopics = searchParams.get('from') === 'topics'
+      const topicId = searchParams.get('topicId')
+      const topicPage = searchParams.get('p')
+
+      if (tid && fromTopics && topicId) {
+        // Build back link
+        const backPath = topicPage
+          ? `/topics/${topicId}?p=${topicPage}`
+          : `/topics/${topicId}`
+        setBackLink(backPath)
+      }
+
+      if (tid) {
+        try {
+          // Fetch target hadith to get its id and position
+          const { data: target, error } = await supabase
+            .from('hadiths')
+            .select('id, book_id')
+            .eq('global_tid', Number(tid))
+            .eq('book_id', id)
+            .single()
+
+          if (error || !target) return
+
+          // Count hadiths with id < target.id to determine page
+          const { count } = await supabase
+            .from('hadiths')
+            .select('*', { count: 'exact', head: true })
+            .eq('book_id', target.book_id)
+            .lt('id', target.id)
+
+          // Set page (count + 1 because page 1 starts at count 0)
+          setCurrentPage((count || 0) + 1)
+        } catch (err) {
+          console.error('Error handling deep link:', err)
+        }
+      }
+    }
+
+    handleDeepLink()
+  }, [searchParams, id, supabase])
+
+  // Fetch book info and build TOC
+  useEffect(() => {
+    async function fetchBook() {
+      const { data: bookData } = await supabase
+        .from('books')
+        .select('*')
+        .eq('id', id)
+        .single()
+      
+      if (bookData) {
+        setBook(bookData)
+      }
+
+      // Fetch distinct parts and pages for TOC
+      const { data: hadithsData } = await supabase
+        .from('hadiths')
+        .select('part, page')
+        .eq('book_id', id)
+        .order('id')
+      
+      if (hadithsData) {
+        buildTOC(hadithsData)
+      }
+    }
+    fetchBook()
+  }, [id])
+
+  // Fetch hadiths based on filters and pagination
+  useEffect(() => {
+    async function fetchHadiths() {
+      setIsLoading(true)
+      
+      let countQuery = supabase
+        .from('hadiths')
+        .select('*', { count: 'exact', head: true })
+        .eq('book_id', id)
+      
+      if (selectedPart) {
+        countQuery = countQuery.eq('part', selectedPart)
+      }
+      if (selectedPage) {
+        countQuery = countQuery.eq('page', selectedPage)
+      }
+
+      const { count } = await countQuery
+      const totalCount = count || 0
+      setTotalPages(Math.ceil(totalCount / HADITHS_PER_PAGE))
+
+      const from = (currentPage - 1) * HADITHS_PER_PAGE
+      const to = from + HADITHS_PER_PAGE - 1
+
+      let query = supabase
+        .from('hadiths')
+        .select('*')
+        .eq('book_id', id)
+        .order('id')
+        .range(from, to)
+      
+      if (selectedPart) {
+        query = query.eq('part', selectedPart)
+      }
+      if (selectedPage) {
+        query = query.eq('page', selectedPage)
+      }
+
+      const { data } = await query
+      
+      if (data) {
+        setHadiths(data)
+      }
+      
+      setIsLoading(false)
+    }
+
+    fetchHadiths()
+  }, [id, currentPage, selectedPart, selectedPage])
+
+  function buildTOC(hadiths: Array<{ part: string | null; page: string | null }>) {
+    const structure: TOCStructure = { parts: new Map() }
+    
+    hadiths.forEach((h) => {
+      const part = h.part || 'بدون جزء'
+      const page = h.page || 'بدون صفحة'
+      
+      if (!structure.parts.has(part)) {
+        structure.parts.set(part, new Set())
+      }
+      structure.parts.get(part)!.add(page)
+    })
+
+    const tree: TreeNode[] = Array.from(structure.parts.entries()).map(([part, pages], idx) => ({
+      id: `part-${idx}`,
+      label: part,
+      data: { type: 'part', value: part },
+      children: Array.from(pages).map((page, pidx) => ({
+        id: `page-${idx}-${pidx}`,
+        label: `صفحة ${page}`,
+        data: { type: 'page', value: page, part },
+      })),
+    }))
+
+    setTocTree(tree)
+  }
+
+  function handleTOCSelect(node: TreeNode) {
+    if (node.data?.type === 'part') {
+      setSelectedPart(node.data.value)
+      setSelectedPage(null)
+    } else if (node.data?.type === 'page') {
+      setSelectedPart(node.data.part)
+      setSelectedPage(node.data.value)
+    }
+    setCurrentPage(1)
+    setIsSidebarOpen(false)
+  }
+
+  function clearFilter() {
+    setSelectedPart(null)
+    setSelectedPage(null)
+    setCurrentPage(1)
+  }
+
+  const TOCContent = (
+    <div className="h-full flex flex-col">
+      <div className="p-4 border-b border-border">
+        <h3 className="font-bold font-arabic-sans mb-2">جدول المحتويات</h3>
+        {(selectedPart || selectedPage) && (
+          <button
+            onClick={clearFilter}
+            className="text-sm text-accent hover:underline font-arabic-sans"
+          >
+            إزالة التصفية
+          </button>
+        )}
+      </div>
+      <div className="flex-1 overflow-y-auto p-4">
+        <Tree nodes={tocTree} selectedId={selectedPage ? undefined : selectedPart} onSelect={handleTOCSelect} />
+      </div>
+    </div>
+  )
+
+  return (
+    <div className="h-screen flex flex-col md:flex-row overflow-hidden">
+      {/* Main Content */}
+      <div className="flex-1 flex flex-col overflow-hidden">
+        {/* Back Bar for Topics Navigation */}
+        {backLink && (
+          <div className="border-b border-border bg-muted/50 px-4 py-2 flex items-center gap-2">
+            <Link
+              href={backLink}
+              className="inline-flex items-center gap-2 text-accent hover:text-accent/80 transition-colors text-sm font-arabic-sans"
+            >
+              <ChevronRight className="w-4 h-4" />
+              رجوع إلى الموضوع
+            </Link>
+            <button
+              onClick={() => setBackLink(null)}
+              className="ml-auto p-1 hover:bg-muted rounded transition-colors"
+            >
+              <X className="w-4 h-4 text-muted-foreground" />
+            </button>
+          </div>
+        )}
+
+        {/* Header */}
+        <div className="border-b border-border bg-card p-4 flex items-center gap-4">
+          <Sheet open={isSidebarOpen} onOpenChange={setIsSidebarOpen}>
+            <SheetTrigger asChild>
+              <button className="md:hidden p-2 hover:bg-muted rounded-lg">
+                <Menu className="w-5 h-5" />
+              </button>
+            </SheetTrigger>
+            <SheetContent side="left" className="w-80 p-0">
+              {TOCContent}
+            </SheetContent>
+          </Sheet>
+          
+          <div className="flex-1">
+            <h1 className="font-bold text-xl line-clamp-1">{book?.title || 'جاري التحميل...'}</h1>
+          </div>
+        </div>
+
+        {/* Content Area */}
+        <div className="flex-1 overflow-y-auto p-4 md:p-8">
+          {isLoading ? (
+            <div className="space-y-4">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <div key={i} className="card p-6 animate-pulse bg-muted h-32" />
+              ))}
+            </div>
+          ) : hadiths.length === 0 ? (
+            <div className="text-center py-12">
+              <p className="text-muted-foreground font-arabic-sans">
+                لا توجد نصوص في هذا القسم
+              </p>
+            </div>
+          ) : (
+            <div className="max-w-4xl mx-auto space-y-6">
+              {hadiths.map((hadith) => (
+                <div key={hadith.id} className="card p-6 space-y-3">
+                  <div className="flex gap-4 text-sm text-muted-foreground font-arabic-sans">
+                    {hadith.part && <span>الجزء: {hadith.part}</span>}
+                    {hadith.page && <span>الصفحة: {hadith.page}</span>}
+                  </div>
+                  <p className="text-lg leading-loose">{hadith.nass}</p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Pagination Controls */}
+        {totalPages > 1 && (
+          <div className="border-t border-border bg-card p-4 flex items-center justify-between">
+            <button
+              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+              disabled={currentPage === 1}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-accent text-accent-foreground disabled:opacity-50 disabled:cursor-not-allowed hover:scale-105 transition-transform font-arabic-sans"
+            >
+              <ChevronRight className="w-5 h-5" />
+              السابق
+            </button>
+            
+            <span className="font-arabic-sans">
+              صفحة {currentPage} من {totalPages}
+            </span>
+            
+            <button
+              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+              disabled={currentPage === totalPages}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-accent text-accent-foreground disabled:opacity-50 disabled:cursor-not-allowed hover:scale-105 transition-transform font-arabic-sans"
+            >
+              التالي
+              <ChevronLeft className="w-5 h-5" />
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* Desktop Sidebar */}
+      <div className="hidden md:block w-80 border-r border-border bg-card overflow-hidden">
+        {TOCContent}
+      </div>
+    </div>
+  )
+}
+</file>
+
+<file path="app/books/category/[id]/page.tsx">
+'use client'
+
+import { use, useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { getSupabaseBrowserClient } from '@/lib/supabase/client'
+import { BookCard } from '@/components/BookCard'
+import { Pagination } from '@/components/Pagination'
+import { Database } from '@/lib/supabase/types'
+import { Search, X, ChevronLeft } from 'lucide-react'
+import Link from 'next/link'
+
+type Book = Database['public']['Tables']['books']['Row'] & {
+  categories: { name_ar: string } | null
+}
+
+type Category = Database['public']['Tables']['categories']['Row']
+
+const ITEMS_PER_PAGE = 12
+
+export default function CategoryBooksPage({
+  params,
+}: {
+  params: Promise<{ id: string }>
+}) {
+  const { id: categoryId } = use(params)
+  const numCategoryId = parseInt(categoryId)
+
+  const [category, setCategory] = useState<Category | null>(null)
+  const [books, setBooks] = useState<Book[]>([])
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searchDebounceTimer, setSearchDebounceTimer] = useState<NodeJS.Timeout | null>(null)
+  const [currentPage, setCurrentPage] = useState(1)
+  const [totalPages, setTotalPages] = useState(1)
+  const [isLoading, setIsLoading] = useState(true)
+
+  const supabase = getSupabaseBrowserClient()
+  const router = useRouter()
+
+  // Fetch category info
+  useEffect(() => {
+    async function fetchCategory() {
+      const { data } = await supabase
+        .from('categories')
+        .select('*')
+        .eq('id', numCategoryId)
+        .single()
+
+      if (data) {
+        setCategory(data)
+      } else {
+        // Redirect if category not found
+        router.push('/books')
+      }
+    }
+
+    fetchCategory()
+  }, [numCategoryId, supabase, router])
+
+  // Fetch books for this category
+  useEffect(() => {
+    async function fetchBooks() {
+      setIsLoading(true)
+
+      // Count total books
+      let countQuery = supabase
+        .from('books')
+        .select('*', { count: 'exact', head: true })
+        .eq('category_id', numCategoryId)
+
+      if (searchQuery.trim()) {
+        countQuery = countQuery.ilike('title', `%${searchQuery}%`)
+      }
+
+      const { count } = await countQuery
+      const totalCount = count || 0
+      setTotalPages(Math.ceil(totalCount / ITEMS_PER_PAGE))
+
+      // Fetch books for current page
+      const from = (currentPage - 1) * ITEMS_PER_PAGE
+      const to = from + ITEMS_PER_PAGE - 1
+
+      let query = supabase
+        .from('books')
+        .select('*, categories(name_ar)')
+        .eq('category_id', numCategoryId)
+        .order('title')
+        .range(from, to)
+
+      if (searchQuery.trim()) {
+        query = query.ilike('title', `%${searchQuery}%`)
+      }
+
+      const { data } = await query
+
+      if (data) {
+        setBooks(data)
+      }
+
+      setIsLoading(false)
+    }
+
+    if (category) {
+      fetchBooks()
+    }
+  }, [numCategoryId, currentPage, searchQuery, supabase, category])
+
+  const handleSearchInput = (value: string) => {
+    setSearchQuery(value)
+    setCurrentPage(1)
+
+    if (searchDebounceTimer) {
+      clearTimeout(searchDebounceTimer)
+    }
+
+    const timer = setTimeout(() => {
+      // Search will be triggered by the useEffect dependency
+    }, 300)
+
+    setSearchDebounceTimer(timer)
+  }
+
+  if (!category && !isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <p className="text-muted-foreground font-arabic-sans">التصنيف غير موجود</p>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="container mx-auto px-4 py-8 max-w-7xl">
+      <div className="space-y-8 animate-entrance">
+        {/* Back Button and Header */}
+        <div className="space-y-4">
+          <Link
+            href="/books"
+            className="inline-flex items-center gap-2 text-accent hover:underline font-arabic-sans mb-4"
+          >
+            <ChevronLeft className="w-4 h-4" />
+            رجوع إلى التصنيفات
+          </Link>
+
+          {category && (
+            <>
+              <h1 className="text-4xl font-bold">{category.name_ar}</h1>
+              <p className="text-lg text-muted-foreground font-arabic-sans">
+                {totalPages > 0
+                  ? `${Math.min(totalPages * ITEMS_PER_PAGE, (totalPages - 1) * ITEMS_PER_PAGE + books.length)} كتاب`
+                  : 'لا توجد كتب'}
+              </p>
+            </>
+          )}
+        </div>
+
+        {/* Search Input */}
+        <div className="flex items-center gap-2 bg-muted rounded-lg px-4 py-3 w-full md:w-96">
+          <Search className="w-5 h-5 text-muted-foreground flex-shrink-0" />
+          <input
+            type="text"
+            placeholder="ابحث عن كتاب..."
+            value={searchQuery}
+            onChange={(e) => handleSearchInput(e.target.value)}
+            className="flex-1 bg-muted outline-none text-sm md:text-base font-arabic-sans placeholder-muted-foreground"
+          />
+          {searchQuery && (
+            <button
+              onClick={() => {
+                setSearchQuery('')
+                setCurrentPage(1)
+              }}
+              className="p-1 hover:bg-background rounded transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          )}
+        </div>
+
+        {/* Books Grid */}
+        {isLoading ? (
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div key={i} className="card p-6 h-32 animate-pulse bg-muted" />
+            ))}
+          </div>
+        ) : books.length === 0 ? (
+          <div className="text-center py-12">
+            <p className="text-muted-foreground font-arabic-sans">
+              {searchQuery
+                ? 'لا توجد كتب تطابق البحث'
+                : 'لا توجد كتب في هذا التصنيف'}
+            </p>
+          </div>
+        ) : (
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {books.map((book) => (
+              <BookCard
+                key={book.id}
+                id={book.id}
+                title={book.title}
+                categoryName={book.categories?.name_ar}
+              />
+            ))}
+          </div>
+        )}
+
+        {/* Pagination */}
+        {totalPages > 1 && (
+          <div className="pt-8">
+            <Pagination
+              currentPage={currentPage}
+              totalPages={totalPages}
+              onPageChange={setCurrentPage}
+            />
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+</file>
+
+<file path="app/books/page.tsx">
+'use client'
+
+import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { getSupabaseBrowserClient } from '@/lib/supabase/client'
+import { Database } from '@/lib/supabase/types'
+
+type Category = Database['public']['Tables']['categories']['Row']
+
+export default function BooksPage() {
+  const [categories, setCategories] = useState<Category[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const supabase = getSupabaseBrowserClient()
+  const router = useRouter()
+
+  useEffect(() => {
+    async function fetchCategories() {
+      setIsLoading(true)
+      const { data } = await supabase
+        .from('categories')
+        .select('*')
+        .order('name_ar')
+      
+      if (data) {
+        setCategories(data)
+      }
+      setIsLoading(false)
+    }
+    fetchCategories()
+  }, [supabase])
+
+  const handleCategorySelect = (categoryId: number) => {
+    router.push(`/books/category/${categoryId}`)
+  }
+
+  return (
+    <div className="container mx-auto px-4 py-8 max-w-7xl">
+      <div className="space-y-8 animate-entrance">
+        {/* Header */}
+        <div className="space-y-4">
+          <h1 className="text-4xl font-bold">الكتب</h1>
+          <p className="text-lg text-muted-foreground font-arabic-sans">
+            اختر تصنيفًا لتصفح الكتب المتوفرة
+          </p>
+        </div>
+
+        {/* Categories Grid */}
+        {isLoading ? (
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div key={i} className="card p-6 h-32 animate-pulse bg-muted" />
+            ))}
+          </div>
+        ) : categories.length === 0 ? (
+          <div className="text-center py-12">
+            <p className="text-muted-foreground font-arabic-sans">
+              لا توجد تصنيفات متوفرة
+            </p>
+          </div>
+        ) : (
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {categories.map((category) => (
+              <button
+                key={category.id}
+                onClick={() => handleCategorySelect(category.id)}
+                className="card p-8 text-center hover:shadow-lg hover:bg-muted transition-all animate-entrance group cursor-pointer"
+              >
+                <h3 className="text-xl md:text-2xl font-bold font-arabic-sans group-hover:text-accent transition-colors">
+                  {category.name_ar}
+                </h3>
+                <p className="text-sm text-muted-foreground font-arabic-sans mt-2">
+                  انقر لعرض الكتب
+                </p>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+</file>
+
+<file path="app/globals.css">
+@import "tailwindcss";
+@import "tw-animate-css";
+
+/* Support for 2 premium themes with data-theme attribute */
+@custom-variant sepia (&:is([data-theme="sepia"] *));
+@custom-variant midnight (&:is([data-theme="midnight"] *));
+
+/* Theme 1: Classic Sepia - Warm, paper-like, traditional Islamic library aesthetic */
+[data-theme="sepia"] {
+  /* Warm sepia palette optimized for long reading sessions */
+  --background: oklch(0.97 0.015 75); /* Warm cream parchment */
+  --foreground: oklch(0.18 0.02 60); /* Deep rich brown - WCAG AAA */
+  --card: oklch(0.99 0.01 75); /* Lighter parchment for cards */
+  --card-foreground: oklch(0.18 0.02 60);
+  --popover: oklch(0.99 0.01 75);
+  --popover-foreground: oklch(0.18 0.02 60);
+  --primary: oklch(0.32 0.06 55); /* Rich dark brown */
+  --primary-foreground: oklch(0.98 0.005 75);
+  --secondary: oklch(0.92 0.015 75); /* Soft sepia */
+  --secondary-foreground: oklch(0.22 0.02 60);
+  --muted: oklch(0.94 0.01 75);
+  --muted-foreground: oklch(0.48 0.015 60);
+  --accent: oklch(0.52 0.14 70); /* Warm amber gold */
+  --accent-foreground: oklch(0.98 0.005 75);
+  --destructive: oklch(0.5 0.2 25);
+  --destructive-foreground: oklch(0.98 0 0);
+  --border: oklch(0.88 0.015 75);
+  --input: oklch(0.88 0.015 75);
+  --ring: oklch(0.52 0.14 70);
+  --chart-1: oklch(0.32 0.06 55);
+  --chart-2: oklch(0.52 0.14 70);
+  --chart-3: oklch(0.45 0.12 200);
+  --chart-4: oklch(0.65 0.15 80);
+  --chart-5: oklch(0.5 0.2 320);
+  --sidebar: oklch(0.985 0.008 75);
+  --sidebar-foreground: oklch(0.18 0.02 60);
+  --sidebar-primary: oklch(0.32 0.06 55);
+  --sidebar-primary-foreground: oklch(0.985 0.008 75);
+  --sidebar-accent: oklch(0.97 0.012 75);
+  --sidebar-accent-foreground: oklch(0.22 0.02 60);
+  --sidebar-border: oklch(0.9 0.015 75);
+  --sidebar-ring: oklch(0.7 0.08 65);
+}
+
+/* Theme 3: Midnight Blue - Premium dark with blue undertones for night reading */
+[data-theme="midnight"] {
+  /* Deep blue-black palette, sophisticated and easy on eyes */
+  --background: oklch(0.12 0.03 250); /* Very dark blue-black */
+  --foreground: oklch(0.92 0.015 240); /* Soft white with blue tint - WCAG AAA */
+  --card: oklch(0.15 0.03 250); /* Slightly lighter blue-black */
+  --card-foreground: oklch(0.92 0.015 240);
+  --popover: oklch(0.15 0.03 250);
+  --popover-foreground: oklch(0.92 0.015 240);
+  --primary: oklch(0.6 0.18 240); /* Bright cyan blue */
+  --primary-foreground: oklch(0.12 0.03 250);
+  --secondary: oklch(0.22 0.03 250); /* Dark blue-gray */
+  --secondary-foreground: oklch(0.92 0.015 240);
+  --muted: oklch(0.22 0.03 250);
+  --muted-foreground: oklch(0.6 0.02 240);
+  --accent: oklch(0.65 0.2 200); /* Vibrant turquoise */
+  --accent-foreground: oklch(0.12 0.03 250);
+  --destructive: oklch(0.58 0.24 25);
+  --destructive-foreground: oklch(0.98 0 0);
+  --border: oklch(0.25 0.03 250);
+  --input: oklch(0.25 0.03 250);
+  --ring: oklch(0.6 0.18 240);
+  --chart-1: oklch(0.6 0.18 240);
+  --chart-2: oklch(0.65 0.2 200);
+  --chart-3: oklch(0.7 0.18 180);
+  --chart-4: oklch(0.55 0.22 260);
+  --chart-5: oklch(0.62 0.2 220);
+  --sidebar: oklch(0.1 0.03 250);
+  --sidebar-foreground: oklch(0.92 0.015 240);
+  --sidebar-primary: oklch(0.6 0.18 240);
+  --sidebar-primary-foreground: oklch(0.1 0.03 250);
+  --sidebar-accent: oklch(0.18 0.03 250);
+  --sidebar-accent-foreground: oklch(0.92 0.015 240);
+  --sidebar-border: oklch(0.22 0.03 250);
+  --sidebar-ring: oklch(0.45 0.1 240);
+}
+
+/* Removed old .dark selector, now using data-theme attributes */
+
+@theme inline {
+  --font-sans: "Tajawal", "Tajawal Fallback", system-ui;
+  --font-arabic: "Amiri", "Amiri Fallback", serif;
+  --font-arabic-sans: "Tajawal", "Tajawal Fallback", sans-serif;
+  --radius: 0.75rem;
+
+  /* Map CSS variables to Tailwind */
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    /* Added smooth color transitions for theme switching */
+    transition: background-color 0.3s ease, color 0.3s ease;
+  }
+
+  /* Added safe area inset support for mobile browsers with bottom URL bars */
+  /* Ensures bottom navigation is always accessible above browser chrome */
+  .pb-safe {
+    padding-bottom: max(1rem, env(safe-area-inset-bottom));
+  }
+
+  /* Arabic text optimization */
+  .font-arabic {
+    font-family: var(--font-arabic);
+    line-height: 1.8;
+  }
+
+  .font-arabic-sans {
+    font-family: var(--font-arabic-sans);
+  }
+
+  /* Mobile-optimized tree nodes */
+  @media (max-width: 768px) {
+    .tree-node {
+      padding: 1rem;
+      border-radius: 0.75rem;
+      background-color: var(--card);
+      border: 1px solid var(--border);
+      margin-bottom: 0.5rem;
+    }
+
+    .tree-node.selected {
+      background-color: var(--accent);
+      color: var(--accent-foreground);
+      border-color: var(--accent);
+    }
+  }
+
+  /* Enhanced fade-in animation for home page only */
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+      transform: translateY(20px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .animate-fade-in {
+    animation: fade-in 1.5s ease-out;
+  }
+
+  /* Fast, subtle entrance animation for general pages (not slow reveal) */
+  @keyframes entrance {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .animate-entrance {
+    animation: entrance 0.3s ease-out;
+  }
+
+  /* Page flip animations for book reader */
+  @keyframes page-flip-forward {
+    0% {
+      transform: perspective(1200px) rotateY(0deg);
+      opacity: 1;
+    }
+    50% {
+      transform: perspective(1200px) rotateY(-90deg);
+      opacity: 0.5;
+    }
+    100% {
+      transform: perspective(1200px) rotateY(-180deg);
+      opacity: 0;
+    }
+  }
+
+  @keyframes page-flip-backward {
+    0% {
+      transform: perspective(1200px) rotateY(180deg);
+      opacity: 0;
+    }
+    50% {
+      transform: perspective(1200px) rotateY(90deg);
+      opacity: 0.5;
+    }
+    100% {
+      transform: perspective(1200px) rotateY(0deg);
+      opacity: 1;
+    }
+  }
+
+  @keyframes page-enter-forward {
+    0% {
+      transform: perspective(1200px) rotateY(180deg);
+      opacity: 0;
+    }
+    50% {
+      transform: perspective(1200px) rotateY(90deg);
+      opacity: 0.5;
+    }
+    100% {
+      transform: perspective(1200px) rotateY(0deg);
+      opacity: 1;
+    }
+  }
+
+  @keyframes page-enter-backward {
+    0% {
+      transform: perspective(1200px) rotateY(-180deg);
+      opacity: 0;
+    }
+    50% {
+      transform: perspective(1200px) rotateY(-90deg);
+      opacity: 0.5;
+    }
+    100% {
+      transform: perspective(1200px) rotateY(0deg);
+      opacity: 1;
+    }
+  }
+
+  /* Simpler fade-slide animation for reduced motion preference */
+  @keyframes page-slide-forward {
+    from {
+      transform: translateX(100%);
+      opacity: 0;
+    }
+    to {
+      transform: translateX(0);
+      opacity: 1;
+    }
+  }
+
+  @keyframes page-slide-backward {
+    from {
+      transform: translateX(-100%);
+      opacity: 0;
+    }
+    to {
+      transform: translateX(0);
+      opacity: 1;
+    }
+  }
+
+  /* Apply page flip animations */
+  .page-flip-forward {
+    animation: page-flip-forward 0.6s ease-in-out;
+  }
+
+  .page-flip-backward {
+    animation: page-flip-backward 0.6s ease-in-out;
+  }
+
+  .page-enter-forward {
+    animation: page-enter-forward 0.6s ease-in-out;
+  }
+
+  .page-enter-backward {
+    animation: page-enter-backward 0.6s ease-in-out;
+  }
+
+  /* Respect reduced motion preference */
+  @media (prefers-reduced-motion: reduce) {
+    .animate-fade-in,
+    .animate-entrance {
+      animation: none;
+      opacity: 1;
+      transform: none;
+    }
+
+    .page-flip-forward,
+    .page-flip-backward,
+    .page-enter-forward,
+    .page-enter-backward {
+      animation: none;
+    }
+
+    /* Use simple fade for reduced motion */
+    .page-flip-forward,
+    .page-enter-forward {
+      animation: page-slide-forward 0.3s ease-out;
+    }
+
+    .page-flip-backward,
+    .page-enter-backward {
+      animation: page-slide-backward 0.3s ease-out;
+    }
+  }
+
+  /* Smooth transitions for all themed elements */
+  [data-theme] * {
+    transition-property: background-color, border-color, color, fill, stroke;
+    transition-timing-function: ease;
+    transition-duration: 0.3s;
+  }
+}
+</file>
+
+<file path="app/layout.tsx">
+import type { Metadata } from "next"
+import { Amiri, Tajawal } from "next/font/google"
+import { Analytics } from "@vercel/analytics/next"
+import { Header } from "@/components/Header"
+import { BottomNav } from "@/components/BottomNav"
+import "./globals.css"
+
+const amiri = Amiri({
+  subsets: ["arabic"],
+  weight: ["400", "700"],
+  variable: "--font-arabic",
+})
+
+const tajawal = Tajawal({
+  subsets: ["arabic"],
+  weight: ["400", "500", "700"],
+  variable: "--font-arabic-sans",
+})
+
+export const metadata: Metadata = {
+  title: "المكتبة العلمية - Islamic Library",
+  description: "مكتبة إسلامية شاملة للبحث في كتب الحديث والعقيدة",
+}
+
+export default function RootLayout({
+  children,
+}: Readonly<{
+  children: React.ReactNode
+}>) {
+  return (
+    <html lang="ar" dir="rtl" suppressHydrationWarning data-theme="sepia">
+      <body className={`${amiri.variable} ${tajawal.variable} font-arabic antialiased`}>
+        <Header />
+        <main className="pb-24 md:pb-0 min-h-screen">{children}</main>
+        <BottomNav />
+        <Analytics />
+      </body>
+    </html>
+  )
+}
+</file>
+
+<file path="app/page.tsx">
+import Link from 'next/link'
+import { BookOpen, List, Search } from 'lucide-react'
+
+export default function HomePage() {
+  return (
+    <div className="min-h-screen flex items-center justify-center p-4">
+      <div className="max-w-4xl w-full space-y-12 animate-fade-in">
+        {/* Hero Section */}
+        <div className="text-center space-y-6">
+          <h1 className="text-5xl md:text-7xl font-bold text-foreground mb-4">
+            المكتبة العلمية
+          </h1>
+          <p className="text-xl md:text-2xl text-muted-foreground font-arabic-sans">
+            مكتبة إسلامية شاملة للبحث في كتب الحديث والعقيدة
+          </p>
+          <p className="text-lg text-muted-foreground font-arabic-sans max-w-2xl mx-auto">
+            استكشف آلاف الكتب والأحاديث المصنفة بدقة، مع إمكانية البحث المتقدم والتصفح حسب المواضيع
+          </p>
+        </div>
+
+        {/* CTA Cards */}
+        <div className="grid md:grid-cols-3 gap-6 pt-8">
+          {/* Browse Topics */}
+          <Link href="/topics" className="group">
+            <div className="card p-8 text-center space-y-4 hover:scale-105 transition-transform duration-300 cursor-pointer">
+              <div className="flex justify-center">
+                <div className="w-16 h-16 rounded-full bg-accent/10 flex items-center justify-center group-hover:bg-accent group-hover:scale-110 transition-all duration-300">
+                  <List className="w-8 h-8 text-accent group-hover:text-accent-foreground transition-colors duration-300" />
+                </div>
+              </div>
+              <h2 className="text-2xl font-bold font-arabic-sans">تصفح المواضيع</h2>
+              <p className="text-muted-foreground font-arabic-sans">
+                ابحث حسب التصنيفات الموضوعية المرتبة هرميًا
+              </p>
+            </div>
+          </Link>
+
+          {/* Browse Books */}
+          <Link href="/books" className="group">
+            <div className="card p-8 text-center space-y-4 hover:scale-105 transition-transform duration-300 cursor-pointer">
+              <div className="flex justify-center">
+                <div className="w-16 h-16 rounded-full bg-accent/10 flex items-center justify-center group-hover:bg-accent group-hover:scale-110 transition-all duration-300">
+                  <BookOpen className="w-8 h-8 text-accent group-hover:text-accent-foreground transition-colors duration-300" />
+                </div>
+              </div>
+              <h2 className="text-2xl font-bold font-arabic-sans">تصفح الكتب</h2>
+              <p className="text-muted-foreground font-arabic-sans">
+                اطّلع على مجموعة واسعة من كتب الحديث والعقيدة
+              </p>
+            </div>
+          </Link>
+
+          {/* Search */}
+          <Link href="/search" className="group">
+            <div className="card p-8 text-center space-y-4 hover:scale-105 transition-transform duration-300 cursor-pointer">
+              <div className="flex justify-center">
+                <div className="w-16 h-16 rounded-full bg-accent/10 flex items-center justify-center group-hover:bg-accent group-hover:scale-110 transition-all duration-300">
+                  <Search className="w-8 h-8 text-accent group-hover:text-accent-foreground transition-colors duration-300" />
+                </div>
+              </div>
+              <h2 className="text-2xl font-bold font-arabic-sans">البحث المتقدم</h2>
+              <p className="text-muted-foreground font-arabic-sans">
+                ابحث في محتوى الكتب والأحاديث بسرعة ودقة
+              </p>
+            </div>
+          </Link>
+        </div>
+
+        {/* Stats or Additional Info */}
+        <div className="text-center pt-8 space-y-4">
+          <p className="text-sm text-muted-foreground font-arabic-sans">
+            مكتبة شاملة تضم آلاف الأحاديث من مصادر موثوقة
+          </p>
+        </div>
+      </div>
+    </div>
+  )
+}
+</file>
+
+<file path="app/search/page.tsx">
+'use client'
+
+import { useState, useEffect } from 'react'
+import { getSupabaseBrowserClient } from '@/lib/supabase/client'
+import { Database } from '@/lib/supabase/types'
+import { Pagination } from '@/components/Pagination'
+import { BookCard } from '@/components/BookCard'
+import { Search as SearchIcon, BookOpen, List, FileText } from 'lucide-react'
+import Link from 'next/link'
+
+type Book = Database['public']['Tables']['books']['Row'] & {
+  categories: { name_ar: string } | null
+}
+type Topic = Database['public']['Tables']['topics']['Row']
+type Hadith = Database['public']['Tables']['hadiths']['Row'] & {
+  books: { title: string } | null
+}
+
+type SearchType = 'all' | 'hadiths' | 'books' | 'topics'
+
+const ITEMS_PER_PAGE = 10
+
+export default function SearchPage() {
+  const [query, setQuery] = useState('')
+  const [searchType, setSearchType] = useState<SearchType>('all')
+  const [hadiths, setHadiths] = useState<Hadith[]>([])
+  const [books, setBooks] = useState<Book[]>([])
+  const [topics, setTopics] = useState<Topic[]>([])
+  const [currentPage, setCurrentPage] = useState(1)
+  const [totalPages, setTotalPages] = useState(1)
+  const [isLoading, setIsLoading] = useState(false)
+  const [hasSearched, setHasSearched] = useState(false)
+
+  const supabase = getSupabaseBrowserClient()
+
+  useEffect(() => {
+    if (query.trim()) {
+      performSearch()
+    }
+  }, [currentPage, searchType])
+
+  async function performSearch() {
+    if (!query.trim()) {
+      setHasSearched(false)
+      return
+    }
+
+    setIsLoading(true)
+    setHasSearched(true)
+
+    const from = (currentPage - 1) * ITEMS_PER_PAGE
+    const to = from + ITEMS_PER_PAGE - 1
+
+    if (searchType === 'all' || searchType === 'hadiths') {
+      const { data: hadithsData, count } = await supabase
+        .from('hadiths')
+        .select('*, books(title)', { count: 'exact' })
+        .textSearch('nass', query, { config: 'arabic', type: 'websearch' })
+        .range(from, to)
+      
+      if (hadithsData) {
+        setHadiths(hadithsData)
+        if (searchType === 'hadiths') {
+          setTotalPages(Math.ceil((count || 0) / ITEMS_PER_PAGE))
+        }
+      }
+    }
+
+    if (searchType === 'all' || searchType === 'books') {
+      const { data: booksData, count } = await supabase
+        .from('books')
+        .select('*, categories(name_ar)', { count: 'exact' })
+        .textSearch('title', query, { config: 'arabic', type: 'websearch' })
+        .range(from, to)
+      
+      if (booksData) {
+        setBooks(booksData)
+        if (searchType === 'books') {
+          setTotalPages(Math.ceil((count || 0) / ITEMS_PER_PAGE))
+        }
+      }
+    }
+
+    if (searchType === 'all' || searchType === 'topics') {
+      const { data: topicsData, count } = await supabase
+        .from('topics')
+        .select('*', { count: 'exact' })
+        .textSearch('title', query, { config: 'arabic', type: 'websearch' })
+        .range(from, to)
+      
+      if (topicsData) {
+        setTopics(topicsData)
+        if (searchType === 'topics') {
+          setTotalPages(Math.ceil((count || 0) / ITEMS_PER_PAGE))
+        }
+      }
+    }
+
+    setIsLoading(false)
+  }
+
+  function handleSearch(e: React.FormEvent) {
+    e.preventDefault()
+    setCurrentPage(1)
+    performSearch()
+  }
+
+  function handleTypeChange(type: SearchType) {
+    setSearchType(type)
+    setCurrentPage(1)
+    if (hasSearched) {
+      performSearch()
+    }
+  }
+
+  const totalResults = hadiths.length + books.length + topics.length
+
+  return (
+    <div className="container mx-auto px-4 py-8 max-w-6xl">
+      <div className="space-y-8 animate-entrance">
+        {/* Header */}
+        <div className="space-y-4">
+          <h1 className="text-4xl font-bold">البحث</h1>
+          <p className="text-lg text-muted-foreground font-arabic-sans">
+            ابحث في محتوى الكتب والأحاديث والمواضيع
+          </p>
+        </div>
+
+        {/* Search Form */}
+        <form onSubmit={handleSearch} className="space-y-4">
+          <div className="flex gap-2">
+            <div className="flex-1 relative">
+              <SearchIcon className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
+              <input
+                type="text"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="ابحث هنا..."
+                className="w-full pr-10 pl-4 py-3 rounded-lg border border-border bg-card focus:outline-none focus:ring-2 focus:ring-accent font-arabic-sans"
+              />
+            </div>
+            <button
+              type="submit"
+              className="px-6 py-3 bg-accent text-accent-foreground rounded-lg hover:scale-105 transition-transform font-arabic-sans font-bold"
+            >
+              بحث
+            </button>
+          </div>
+
+          {/* Search Type Filter */}
+          <div className="flex gap-2 flex-wrap">
+            {[
+              { value: 'all', label: 'الكل', icon: FileText },
+              { value: 'hadiths', label: 'الأحاديث', icon: FileText },
+              { value: 'books', label: 'الكتب', icon: BookOpen },
+              { value: 'topics', label: 'المواضيع', icon: List },
+            ].map((type) => {
+              const Icon = type.icon
+              return (
+                <button
+                  key={type.value}
+                  type="button"
+                  onClick={() => handleTypeChange(type.value as SearchType)}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg font-arabic-sans transition-all ${
+                    searchType === type.value
+                      ? 'bg-accent text-accent-foreground'
+                      : 'bg-card hover:bg-muted'
+                  }`}
+                >
+                  <Icon className="w-4 h-4" />
+                  {type.label}
+                </button>
+              )
+            })}
+          </div>
+        </form>
+
+        {/* Results */}
+        {isLoading ? (
+          <div className="space-y-4">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <div key={i} className="card p-6 animate-pulse bg-muted h-24" />
+            ))}
+          </div>
+        ) : !hasSearched ? (
+          <div className="text-center py-12">
+            <SearchIcon className="w-16 h-16 mx-auto text-muted-foreground mb-4" />
+            <p className="text-muted-foreground font-arabic-sans text-lg">
+              أدخل كلمة أو عبارة للبحث
+            </p>
+          </div>
+        ) : totalResults === 0 ? (
+          <div className="text-center py-12">
+            <p className="text-muted-foreground font-arabic-sans text-lg">
+              لم يتم العثور على نتائج
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-8">
+            {/* Hadiths Results */}
+            {(searchType === 'all' || searchType === 'hadiths') && hadiths.length > 0 && (
+              <div className="space-y-4">
+                <h2 className="text-2xl font-bold font-arabic-sans flex items-center gap-2">
+                  <FileText className="w-6 h-6" />
+                  الأحاديث ({hadiths.length})
+                </h2>
+                <div className="space-y-4">
+                  {hadiths.map((hadith) => (
+                    <div key={hadith.id} className="card p-6 space-y-3">
+                      <div className="flex gap-4 text-sm text-muted-foreground font-arabic-sans">
+                        {hadith.books && <span>الكتاب: {hadith.books.title}</span>}
+                        <span className="mr-auto">#{hadith.id}</span>
+                      </div>
+                      <p className="text-lg leading-loose line-clamp-3">{hadith.nass}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Books Results */}
+            {(searchType === 'all' || searchType === 'books') && books.length > 0 && (
+              <div className="space-y-4">
+                <h2 className="text-2xl font-bold font-arabic-sans flex items-center gap-2">
+                  <BookOpen className="w-6 h-6" />
+                  الكتب ({books.length})
+                </h2>
+                <div className="grid md:grid-cols-2 gap-4">
+                  {books.map((book) => (
+                    <BookCard
+                      key={book.id}
+                      id={book.id}
+                      title={book.title}
+                      categoryName={book.categories?.name_ar}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Topics Results */}
+            {(searchType === 'all' || searchType === 'topics') && topics.length > 0 && (
+              <div className="space-y-4">
+                <h2 className="text-2xl font-bold font-arabic-sans flex items-center gap-2">
+                  <List className="w-6 h-6" />
+                  المواضيع ({topics.length})
+                </h2>
+                <div className="grid md:grid-cols-2 gap-4">
+                  {topics.map((topic) => (
+                    <Link key={topic.id} href="/topics" className="block group">
+                      <div className="card p-6 hover:shadow-lg transition-all">
+                        <h3 className="font-bold text-lg group-hover:text-accent transition-colors">
+                          {topic.title}
+                        </h3>
+                        <p className="text-sm text-muted-foreground font-arabic-sans mt-2">
+                          المستوى {topic.level}
+                        </p>
+                      </div>
+                    </Link>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Pagination */}
+            {searchType !== 'all' && totalPages > 1 && (
+              <div className="pt-4">
+                <Pagination
+                  currentPage={currentPage}
+                  totalPages={totalPages}
+                  onPageChange={setCurrentPage}
+                />
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+</file>
+
+<file path="app/topics/[id]/page.tsx">
+'use client'
+
+import { use, useEffect, useState } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
+import { getSupabaseBrowserClient } from '@/lib/supabase/client'
+import { Database } from '@/lib/supabase/types'
+import { Pagination } from '@/components/Pagination'
+import { ChevronLeft } from 'lucide-react'
+import Link from 'next/link'
+
+type Topic = Database['public']['Tables']['topics']['Row']
+
+interface HadithWithBook {
+  id: number
+  global_tid: number | null
+  nass: string
+  book_id: string
+  books: { title: string } | null
+}
+
+const HADITHS_PER_PAGE = 10
+
+// Helper function to truncate text and show preview
+function truncateText(text: string, lines: number = 2): string {
+  const splitLines = text.split('\n')
+  const truncatedLines = splitLines.slice(0, lines).join('\n')
+  
+  // Also check character limit to be safe
+  const charLimit = 300
+  if (truncatedLines.length > charLimit) {
+    return truncatedLines.substring(0, charLimit).trim() + '...'
+  }
+  
+  if (splitLines.length > lines) {
+    return truncatedLines + '...'
+  }
+  
+  return text
+}
+
+function BreadcrumbLink({ topic }: { topic: Topic }) {
+  const [hasChildren, setHasChildren] = useState<boolean | null>(null)
+  const router = useRouter()
+  const supabase = getSupabaseBrowserClient()
+
+  useEffect(() => {
+    async function checkChildren() {
+      const { count } = await supabase
+        .from('topics')
+        .select('*', { count: 'exact', head: true })
+        .eq('parent_id', topic.id)
+
+      setHasChildren((count || 0) > 0)
+    }
+
+    checkChildren()
+  }, [topic.id, supabase])
+
+  const handleClick = () => {
+    if (hasChildren === false) {
+      // Leaf node: go to hadith page
+      router.push(`/topics/${topic.id}`)
+    } else if (hasChildren === true) {
+      // Parent node: go to topics page showing children
+      router.push(`/topics?parentId=${topic.id}`)
+    }
+  }
+
+  return (
+    <button
+      onClick={handleClick}
+      className="hover:text-accent transition-colors"
+    >
+      {topic.title}
+    </button>
+  )
+}
+
+export default function TopicDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = use(params)
+  const topicId = parseInt(id)
+  const searchParams = useSearchParams()
+  
+  // Read pagination page from search params
+  const initialPage = searchParams.get('p') ? parseInt(searchParams.get('p')!) : 1
+
+  const [topic, setTopic] = useState<Topic | null>(null)
+  const [breadcrumb, setBreadcrumb] = useState<Topic[]>([])
+  const [hadiths, setHadiths] = useState<HadithWithBook[]>([])
+  const [currentPage, setCurrentPage] = useState(initialPage)
+  const [totalPages, setTotalPages] = useState(1)
+  const [isLoading, setIsLoading] = useState(true)
+
+  const supabase = getSupabaseBrowserClient()
+
+  // Fetch topic and build breadcrumb trail
+  useEffect(() => {
+    async function fetchTopic() {
+      // Fetch current topic
+      const { data: currentTopic } = await supabase
+        .from('topics')
+        .select('*')
+        .eq('id', topicId)
+        .single()
+      
+      if (!currentTopic) return
+      
+      setTopic(currentTopic)
+      
+      // Build breadcrumb trail by traversing parent_id chain
+      const trail: Topic[] = [currentTopic]
+      let currentParentId = currentTopic.parent_id
+      
+      while (currentParentId !== null) {
+        const { data: parentTopic } = await supabase
+          .from('topics')
+          .select('*')
+          .eq('id', currentParentId)
+          .single()
+        
+        if (!parentTopic) break
+        
+        trail.unshift(parentTopic)
+        currentParentId = parentTopic.parent_id
+      }
+      
+      setBreadcrumb(trail)
+    }
+    
+    fetchTopic()
+  }, [topicId, supabase])
+
+  // Fetch hadiths for this topic
+  useEffect(() => {
+    async function fetchHadiths() {
+      if (!topic) return
+      
+      setIsLoading(true)
+
+      // Count total hadiths
+      const { count } = await supabase
+        .from('hadith_topics')
+        .select('*', { count: 'exact', head: true })
+        .eq('topic_id', topicId)
+      
+      const totalCount = count || 0
+      setTotalPages(Math.ceil(totalCount / HADITHS_PER_PAGE))
+
+      // Fetch hadiths with pagination
+      const from = (currentPage - 1) * HADITHS_PER_PAGE
+      const to = from + HADITHS_PER_PAGE - 1
+
+      const { data } = await supabase
+        .from('hadith_topics')
+        .select('hadiths!inner(id, global_tid, nass, book_id, books(title))')
+        .eq('topic_id', topicId)
+        .range(from, to)
+      
+      if (data) {
+        // @ts-ignore - Supabase nested query typing
+        const hadithsData: HadithWithBook[] = data.map(item => item.hadiths).filter(Boolean)
+        setHadiths(hadithsData)
+      }
+      
+      setIsLoading(false)
+    }
+
+    fetchHadiths()
+  }, [topic, topicId, currentPage, supabase])
+
+  if (!topic) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-16 h-16 border-4 border-accent border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-muted-foreground font-arabic-sans">جاري التحميل...</p>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="min-h-screen">
+      <div className="container mx-auto px-4 py-6 max-w-5xl">
+        {/* Breadcrumb Navigation */}
+        <div className="mb-6">
+          <Link 
+            href="/topics"
+            className="inline-flex items-center gap-2 text-accent hover:underline font-arabic-sans mb-4"
+          >
+            <ChevronLeft className="w-4 h-4" />
+            رجوع الشجرة الموضوعية
+          </Link>
+          
+          <div className="flex flex-wrap items-center gap-2 text-lg bg-card border border-border rounded-lg p-4">
+            <Link href="/topics" className="hover:text-accent transition-colors">
+              الرئيسية
+            </Link>
+            
+            {breadcrumb.map((item, index) => (
+              <div key={item.id} className="flex items-center gap-2">
+                <ChevronLeft className="w-4 h-4 text-muted-foreground" />
+                {index === breadcrumb.length - 1 ? (
+                  <span className="font-bold">{item.title}</span>
+                ) : (
+                  <BreadcrumbLink topic={item} />
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Topic Header */}
+        <div className="mb-8 space-y-2">
+          <h1 className="text-3xl md:text-4xl font-bold">{topic.title}</h1>
+          <p className="text-muted-foreground font-arabic-sans">
+            المستوى {topic.level} • {totalPages > 0 ? `${totalPages * HADITHS_PER_PAGE} حديث تقريبًا` : 'لا توجد أحاديث'}
+          </p>
+        </div>
+
+        {/* Hadiths Content */}
+        {isLoading ? (
+          <div className="space-y-4">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <div key={i} className="card p-6 animate-pulse bg-muted h-32" />
+            ))}
+          </div>
+        ) : hadiths.length === 0 ? (
+          <div className="text-center py-12 card">
+            <p className="text-muted-foreground font-arabic-sans text-lg">
+              لا توجد أحاديث مرتبطة بهذا الموضوع
+            </p>
+          </div>
+        ) : (
+          <>
+            <div className="space-y-6">
+              {hadiths.map((hadith) => {
+                const bookLink = hadith.global_tid
+                  ? `/books/${hadith.book_id}?tid=${hadith.global_tid}&from=topics&topicId=${topicId}&p=${currentPage}`
+                  : null
+
+                const previewText = truncateText(hadith.nass, 2)
+                
+                return (
+                  <Link
+                    key={hadith.id}
+                    href={bookLink || '#'}
+                    className={`card p-6 space-y-3 animate-entrance transition-all ${
+                      bookLink
+                        ? 'hover:bg-muted hover:shadow-lg cursor-pointer'
+                        : 'opacity-50 cursor-default'
+                    }`}
+                  >
+                    <div className="flex gap-4 text-sm text-muted-foreground font-arabic-sans">
+                      {hadith.books && (
+                        <span className="font-bold">الكتاب: {hadith.books.title}</span>
+                      )}
+                      <span className="mr-auto">#{hadith.id}</span>
+                    </div>
+                    <p className="text-lg leading-loose line-clamp-4">{previewText}</p>
+                  </Link>
+                )
+              })}
+            </div>
+
+            {/* Pagination */}
+            {totalPages > 1 && (
+              <div className="mt-8">
+                <Pagination
+                  currentPage={currentPage}
+                  totalPages={totalPages}
+                  onPageChange={(page) => {
+                    setCurrentPage(page)
+                    // Update URL with page parameter
+                    window.history.replaceState(null, '', `?p=${page}`)
+                  }}
+                />
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+</file>
+
+<file path="app/topics/page.tsx">
+'use client'
+
+import { useEffect, useState, useCallback, Suspense } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
+import { getSupabaseBrowserClient } from '@/lib/supabase/client'
+import { Database } from '@/lib/supabase/types'
+import { Tree, TreeNode } from '@/components/Tree'
+import { Menu, Search, X } from 'lucide-react'
+import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet'
+import Link from 'next/link'
+import { ChevronLeft } from 'lucide-react'
+
+type Topic = Database['public']['Tables']['topics']['Row']
+
+interface BreadcrumbTopic extends Topic {
+  breadcrumb: Topic[]
+}
+
+function TopicsPageContent() {
+  const [topics, setTopics] = useState<Map<number, Topic>>(new Map())
+  const [topicTree, setTopicTree] = useState<TreeNode[]>([])
+  const [breadcrumb, setBreadcrumb] = useState<Topic[]>([])
+  const [isLoading, setIsLoading] = useState(false)
+  const [loadingNodes, setLoadingNodes] = useState<Set<number>>(new Set())
+  
+  // Search state
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searchResults, setSearchResults] = useState<BreadcrumbTopic[]>([])
+  const [isSearching, setIsSearching] = useState(false)
+  const [searchDebounceTimer, setSearchDebounceTimer] = useState<NodeJS.Timeout | null>(null)
+
+  const supabase = getSupabaseBrowserClient()
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  const parentId = searchParams.get('parentId') ? parseInt(searchParams.get('parentId')!) : null
+
+  // Helper: Update tree when new topics are loaded in background
+  const updateTreeWithNewTopics = useCallback((newTopics: Topic[]) => {
+    setTopicTree(prevTree => {
+      return prevTree.map(rootNode => {
+        const rootTopic = rootNode.data as Topic
+        if (!rootTopic) return rootNode
+        
+        // Check if any new topics are children of this root
+        const newChildren = newTopics.filter(t => t.parent_id === rootTopic.id)
+        if (newChildren.length === 0) return rootNode
+        
+        // If root node hasn't been expanded yet, just mark it as having children
+        if (!rootNode.children) {
+          return { ...rootNode, hasChildren: true }
+        }
+        
+        // Otherwise, add new children to existing children
+        const existingChildIds = new Set(rootNode.children.map(c => c.id))
+        const additionalChildren = newChildren
+          .filter(t => !existingChildIds.has(t.id))
+          .map(t => ({
+            id: t.id,
+            label: t.title,
+            data: t,
+            hasChildren: false, // Will be checked when expanded
+          }))
+        
+        return {
+          ...rootNode,
+          children: [...(rootNode.children || []), ...additionalChildren],
+        }
+      })
+    })
+  }, [])
+
+  // Step 2: Load remaining topics in background (non-blocking)
+  const loadRemainingTopicsInBackground = useCallback(async (existingTopics: Map<number, Topic>) => {
+    // Fetch all non-root topics in batches
+    let from = 0
+    const batchSize = 1000
+    
+    while (true) {
+      const { data, error } = await supabase
+        .from('topics')
+        .select('*')
+        .not('parent_id', 'is', null) // Only non-root topics
+        .order('id')
+        .range(from, from + batchSize - 1)
+      
+      if (error || !data || data.length === 0) break
+      
+      // Merge into existing topics map
+      data.forEach(t => existingTopics.set(t.id, t))
+      setTopics(new Map(existingTopics))
+      
+      // Update tree with newly loaded children
+      updateTreeWithNewTopics(data)
+      
+      if (data.length < batchSize) break
+      from += batchSize
+    }
+  }, [supabase, updateTreeWithNewTopics])
+
+  // Step 1: Load topics based on parentId parameter
+  useEffect(() => {
+    async function fetchTopics() {
+      setIsLoading(true)
+      setBreadcrumb([])
+
+      if (parentId) {
+        // Fetch parent topic and build breadcrumb
+        const { data: parentTopic } = await supabase
+          .from('topics')
+          .select('*')
+          .eq('id', parentId)
+          .single()
+
+        if (!parentTopic) {
+          router.push('/topics')
+          return
+        }
+
+        // Build breadcrumb trail
+        const trail: Topic[] = [parentTopic]
+        let currentParentId = parentTopic.parent_id
+
+        while (currentParentId !== null) {
+          const { data: parent } = await supabase
+            .from('topics')
+            .select('*')
+            .eq('id', currentParentId)
+            .single()
+
+          if (!parent) break
+
+          trail.unshift(parent)
+          currentParentId = parent.parent_id
+        }
+
+        setBreadcrumb(trail)
+
+        // Fetch direct children of this parent topic
+        const { data: children, error } = await supabase
+          .from('topics')
+          .select('*')
+          .eq('parent_id', parentId)
+          .order('id')
+
+        if (error) {
+          console.error('Error fetching children:', error)
+          setIsLoading(false)
+          return
+        }
+
+        if (children) {
+          // Store topics
+          const topicsMap = new Map<number, Topic>()
+          children.forEach(t => topicsMap.set(t.id, t))
+          setTopics(topicsMap)
+
+          // Create tree nodes for children
+          const childNodes: TreeNode[] = await Promise.all(
+            children.map(async (topic) => {
+              const { count } = await supabase
+                .from('topics')
+                .select('*', { count: 'exact', head: true })
+                .eq('parent_id', topic.id)
+
+              return {
+                id: topic.id,
+                label: topic.title,
+                data: topic,
+                hasChildren: (count || 0) > 0,
+                children: undefined,
+              }
+            })
+          )
+
+          setTopicTree(childNodes)
+        }
+      } else {
+        // Fetch root topics (parent_id IS NULL) - instant load
+        const { data: rootTopics, error } = await supabase
+          .from('topics')
+          .select('*')
+          .is('parent_id', null)
+          .order('id')
+
+        if (error) {
+          console.error('Error fetching root topics:', error)
+          setIsLoading(false)
+          return
+        }
+
+        if (rootTopics) {
+          // Store root topics
+          const topicsMap = new Map<number, Topic>()
+          rootTopics.forEach(t => topicsMap.set(t.id, t))
+          setTopics(topicsMap)
+
+          // Check which root topics have children
+          const rootNodes: TreeNode[] = await Promise.all(
+            rootTopics.map(async (topic) => {
+              const { count } = await supabase
+                .from('topics')
+                .select('*', { count: 'exact', head: true })
+                .eq('parent_id', topic.id)
+
+              return {
+                id: topic.id,
+                label: topic.title,
+                data: topic,
+                hasChildren: (count || 0) > 0,
+                children: undefined,
+              }
+            })
+          )
+
+          setTopicTree(rootNodes)
+          setIsLoading(false)
+
+          // Step 2: Start loading remaining topics in background (non-blocking)
+          loadRemainingTopicsInBackground(topicsMap)
+        }
+      }
+
+      setIsLoading(false)
+    }
+
+    fetchTopics()
+  }, [parentId, supabase, router, loadRemainingTopicsInBackground])
+
+  // Helper: Update tree with loaded children for a specific parent
+  const updateTreeWithChildren = useCallback((parentId: number, childNodes: TreeNode[]) => {
+    setTopicTree(prevTree => {
+      function updateNode(node: TreeNode): TreeNode {
+        if (node.id === parentId) {
+          return {
+            ...node,
+            children: childNodes,
+            isLoading: false,
+          }
+        }
+        
+        if (node.children) {
+          return {
+            ...node,
+            children: node.children.map(updateNode),
+          }
+        }
+        
+        return node
+      }
+      
+      return prevTree.map(updateNode)
+    })
+  }, [])
+
+  // Step 3: Load children on-demand when node is expanded
+  const handleNodeExpand = useCallback(async (node: TreeNode) => {
+    const topic = node.data as Topic
+    if (!topic) return
+    
+    // Check if children already loaded
+    if (node.children && node.children.length > 0) return
+    
+    setLoadingNodes(prev => new Set(prev).add(topic.id))
+    
+    // Fetch direct children of this topic
+    const { data: children, error } = await supabase
+      .from('topics')
+      .select('*')
+      .eq('parent_id', topic.id)
+      .order('id')
+    
+    if (error || !children) {
+      setLoadingNodes(prev => {
+        const next = new Set(prev)
+        next.delete(topic.id)
+        return next
+      })
+      return
+    }
+    
+    // Store children in topics map
+    const updatedTopics = new Map(topics)
+    children.forEach(t => updatedTopics.set(t.id, t))
+    setTopics(updatedTopics)
+    
+    // Check which children have their own children
+    const childNodes: TreeNode[] = await Promise.all(
+      children.map(async (childTopic) => {
+        const { count } = await supabase
+          .from('topics')
+          .select('*', { count: 'exact', head: true })
+          .eq('parent_id', childTopic.id)
+        
+        return {
+          id: childTopic.id,
+          label: childTopic.title,
+          data: childTopic,
+          hasChildren: (count || 0) > 0,
+          children: undefined,
+        }
+      })
+    )
+    
+    // Update tree with loaded children
+    updateTreeWithChildren(topic.id, childNodes)
+    
+    setLoadingNodes(prev => {
+      const next = new Set(prev)
+      next.delete(topic.id)
+      return next
+    })
+  }, [supabase, topics, updateTreeWithChildren])
+
+  // Handle topic selection - if leaf node, redirect to detail page; if parent node, expand in-place
+  const handleTopicSelect = useCallback(async (node: TreeNode) => {
+    const topic = node.data as Topic
+    if (!topic) return
+
+    // Check if it's actually a leaf node by querying children count
+    const { count } = await supabase
+      .from('topics')
+      .select('*', { count: 'exact', head: true })
+      .eq('parent_id', topic.id)
+
+    if (count === 0) {
+      // Leaf node: redirect to detail page with hadiths
+      router.push(`/topics/${topic.id}`)
+    } else {
+      // Parent node: expand children in-place by calling handleNodeExpand
+      // This fetches and displays children without navigation
+      await handleNodeExpand(node)
+    }
+  }, [supabase, router, handleNodeExpand])
+
+  // Build breadcrumb trail for a topic
+  const buildBreadcrumbForTopic = useCallback(async (topicId: number): Promise<Topic[]> => {
+    const trail: Topic[] = []
+    let currentId: number | null = topicId
+    
+    while (currentId !== null) {
+      const { data: topic } = await supabase
+        .from('topics')
+        .select('*')
+        .eq('id', currentId)
+        .single()
+      
+      if (!topic) break
+      
+      trail.unshift(topic)
+      currentId = topic.parent_id
+    }
+    
+    return trail
+  }, [supabase])
+
+  // Search topics with debounce
+  const performSearch = useCallback(async (query: string) => {
+    if (!query.trim()) {
+      setSearchResults([])
+      setIsSearching(false)
+      return
+    }
+
+    setIsSearching(true)
+    try {
+      const { data, error } = await supabase
+        .from('topics')
+        .select('*')
+        .ilike('title', `%${query}%`)
+        .limit(50)
+
+      if (error || !data) {
+        setSearchResults([])
+        return
+      }
+
+      // Build breadcrumbs for each result
+      const resultsWithBreadcrumbs: BreadcrumbTopic[] = await Promise.all(
+        data.map(async (topic) => ({
+          ...topic,
+          breadcrumb: await buildBreadcrumbForTopic(topic.id),
+        }))
+      )
+
+      setSearchResults(resultsWithBreadcrumbs)
+    } catch (err) {
+      console.error('Search error:', err)
+      setSearchResults([])
+    } finally {
+      setIsSearching(false)
+    }
+  }, [supabase, buildBreadcrumbForTopic])
+
+  // Handle search input with debounce
+  const handleSearchInput = useCallback((value: string) => {
+    setSearchQuery(value)
+
+    if (searchDebounceTimer) {
+      clearTimeout(searchDebounceTimer)
+    }
+
+    const timer = setTimeout(() => {
+      performSearch(value)
+    }, 300)
+
+    setSearchDebounceTimer(timer)
+  }, [searchDebounceTimer, performSearch])
+
+  // Handle selecting a search result
+  const handleSearchResultSelect = useCallback(async (result: BreadcrumbTopic) => {
+    setSearchQuery('')
+    setSearchResults([])
+
+    // Check if leaf or parent
+    const { count } = await supabase
+      .from('topics')
+      .select('*', { count: 'exact', head: true })
+      .eq('parent_id', result.id)
+
+    if (count === 0) {
+      router.push(`/topics/${result.id}`)
+    } else {
+      router.push(`/topics?parentId=${result.id}`)
+    }
+  }, [supabase, router])
+
+  // Update tree nodes with loading state
+  useEffect(() => {
+    setTopicTree(prevTree => {
+      function updateLoadingState(node: TreeNode): TreeNode {
+        const updated = {
+          ...node,
+          isLoading: loadingNodes.has(Number(node.id)),
+        }
+        
+        if (node.children) {
+          updated.children = node.children.map(updateLoadingState)
+        }
+        
+        return updated
+      }
+      
+      return prevTree.map(updateLoadingState)
+    })
+  }, [loadingNodes])
+
+  const TreeContent = (
+    <div className="h-full flex flex-col">
+      <div className="p-4 border-b border-border space-y-3">
+        <h3 className="font-bold font-arabic-sans">المواضيع</h3>
+        
+        {/* Search Input */}
+        <div className="relative">
+          <div className="flex items-center gap-2 bg-muted rounded-lg px-3 py-2">
+            <Search className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+            <input
+              type="text"
+              placeholder="ابحث عن موضوع..."
+              value={searchQuery}
+              onChange={(e) => handleSearchInput(e.target.value)}
+              className="flex-1 bg-muted outline-none text-sm font-arabic-sans placeholder-muted-foreground"
+            />
+            {searchQuery && (
+              <button
+                onClick={() => {
+                  setSearchQuery('')
+                  setSearchResults([])
+                }}
+                className="p-1 hover:bg-background rounded transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+
+          {/* Search Results Dropdown */}
+          {searchResults.length > 0 && (
+            <div className="absolute top-full left-0 right-0 mt-2 bg-card border border-border rounded-lg shadow-lg max-h-96 overflow-y-auto z-50">
+              {searchResults.map((result) => (
+                <button
+                  key={result.id}
+                  onClick={() => handleSearchResultSelect(result)}
+                  className="w-full text-right px-4 py-3 border-b border-border last:border-b-0 hover:bg-muted transition-colors"
+                >
+                  <div className="flex flex-col gap-1">
+                    <span className="font-semibold text-sm font-arabic-sans">{result.title}</span>
+                    <div className="flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
+                      {result.breadcrumb.map((item, idx) => (
+                        <div key={item.id} className="flex items-center gap-1">
+                          {idx > 0 && <ChevronLeft className="w-3 h-3" />}
+                          <span>{item.title}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+
+          {isSearching && (
+            <div className="absolute top-full left-0 right-0 mt-2 bg-card border border-border rounded-lg p-4 text-center text-sm text-muted-foreground font-arabic-sans">
+              جاري البحث...
+            </div>
+          )}
+        </div>
+
+        {breadcrumb.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2 text-xs bg-muted border border-border rounded-lg p-2">
+            <Link href="/topics" className="hover:text-accent transition-colors">
+              الرئيسية
+            </Link>
+
+            {breadcrumb.map((item, index) => (
+              <div key={item.id} className="flex items-center gap-1">
+                <ChevronLeft className="w-2 h-2 text-muted-foreground" />
+                {index === breadcrumb.length - 1 ? (
+                  <span className="font-bold">{item.title}</span>
+                ) : (
+                  <Link
+                    href={`/topics?parentId=${item.id}`}
+                    className="hover:text-accent transition-colors"
+                  >
+                    {item.title}
+                  </Link>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+      <div className="flex-1 overflow-y-auto p-4">
+        {isLoading && topicTree.length === 0 ? (
+          <div className="space-y-2">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <div key={i} className="h-8 bg-muted animate-pulse rounded" />
+            ))}
+          </div>
+        ) : (
+          <Tree
+            nodes={topicTree}
+            onSelect={handleTopicSelect}
+            onExpand={handleNodeExpand}
+          />
+        )}
+      </div>
+    </div>
+  )
+
+  return (
+    <>
+      {/* Mobile View: Tree + Content in single scroll */}
+      <div className="md:hidden min-h-screen">
+        <div className="container mx-auto px-4 py-6 space-y-6">
+          {/* Mobile Tree Header */}
+          <div className="space-y-4">
+            <h1 className="text-3xl font-bold">المواضيع</h1>
+            <p className="text-muted-foreground font-arabic-sans">
+              اختر موضوعًا من الشجرة لعرض الأحاديث المرتبطة
+            </p>
+
+            {/* Mobile Search Input */}
+            <div className="relative">
+              <div className="flex items-center gap-2 bg-muted rounded-lg px-3 py-2">
+                <Search className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                <input
+                  type="text"
+                  placeholder="ابحث عن موضوع..."
+                  value={searchQuery}
+                  onChange={(e) => handleSearchInput(e.target.value)}
+                  className="flex-1 bg-muted outline-none text-sm font-arabic-sans placeholder-muted-foreground"
+                />
+                {searchQuery && (
+                  <button
+                    onClick={() => {
+                      setSearchQuery('')
+                      setSearchResults([])
+                    }}
+                    className="p-1 hover:bg-background rounded transition-colors"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+
+              {/* Mobile Search Results Dropdown */}
+              {searchResults.length > 0 && (
+                <div className="absolute top-full left-0 right-0 mt-2 bg-card border border-border rounded-lg shadow-lg max-h-96 overflow-y-auto z-50">
+                  {searchResults.map((result) => (
+                    <button
+                      key={result.id}
+                      onClick={() => handleSearchResultSelect(result)}
+                      className="w-full text-right px-4 py-3 border-b border-border last:border-b-0 hover:bg-muted transition-colors"
+                    >
+                      <div className="flex flex-col gap-1">
+                        <span className="font-semibold text-sm font-arabic-sans">{result.title}</span>
+                        <div className="flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
+                          {result.breadcrumb.map((item, idx) => (
+                            <div key={item.id} className="flex items-center gap-1">
+                              {idx > 0 && <ChevronLeft className="w-3 h-3" />}
+                              <span>{item.title}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {isSearching && (
+                <div className="absolute top-full left-0 right-0 mt-2 bg-card border border-border rounded-lg p-4 text-center text-sm text-muted-foreground font-arabic-sans">
+                  جاري البحث...
+                </div>
+              )}
+            </div>
+
+            {breadcrumb.length > 0 && (
+              <div className="flex flex-wrap items-center gap-2 text-sm bg-card border border-border rounded-lg p-3">
+                <Link href="/topics" className="hover:text-accent transition-colors">
+                  الرئيسية
+                </Link>
+
+                {breadcrumb.map((item, index) => (
+                  <div key={item.id} className="flex items-center gap-2">
+                    <ChevronLeft className="w-3 h-3 text-muted-foreground" />
+                    {index === breadcrumb.length - 1 ? (
+                      <span className="font-bold">{item.title}</span>
+                    ) : (
+                      <Link
+                        href={`/topics?parentId=${item.id}`}
+                        className="hover:text-accent transition-colors"
+                      >
+                        {item.title}
+                      </Link>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Mobile Tree Navigation */}
+          <div className="space-y-2">
+            {isLoading && topicTree.length === 0 ? (
+              <div className="space-y-2">
+                {Array.from({ length: 5 }).map((_, i) => (
+                  <div key={i} className="h-12 bg-muted animate-pulse rounded-lg" />
+                ))}
+              </div>
+            ) : (
+              <Tree
+                nodes={topicTree}
+                onSelect={handleTopicSelect}
+                onExpand={handleNodeExpand}
+              />
+            )}
+          </div>
+
+          <div className="text-center py-8 text-muted-foreground font-arabic-sans">
+            اضغط على أي موضوع لعرض الأحاديث المرتبطة به
+          </div>
+        </div>
+      </div>
+
+      {/* Desktop View: Centered Tree */}
+      <div className="hidden md:flex h-screen flex-col overflow-hidden bg-background">
+        <div className="flex-1 overflow-y-auto p-8 flex items-start justify-center pt-12">
+          <div className="w-full max-w-5xl">
+            <div className="card overflow-hidden" style={{ height: 'calc(100vh - 200px)' }}>
+              {TreeContent}
+            </div>
+          </div>
+        </div>
+      </div>
+    </>
+  )
+}
+
+export default function TopicsPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-16 h-16 border-4 border-accent border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-muted-foreground font-arabic-sans">جاري التحميل...</p>
+        </div>
+      </div>
+    }>
+      <TopicsPageContent />
+    </Suspense>
+  )
+}
+</file>
+
+<file path="components.json">
+{
+  "$schema": "https://ui.shadcn.com/schema.json",
+  "style": "new-york",
+  "rsc": true,
+  "tsx": true,
+  "tailwind": {
+    "config": "",
+    "css": "app/globals.css",
+    "baseColor": "neutral",
+    "cssVariables": true,
+    "prefix": ""
+  },
+  "aliases": {
+    "components": "@/components",
+    "utils": "@/lib/utils",
+    "ui": "@/components/ui",
+    "lib": "@/lib",
+    "hooks": "@/hooks"
+  },
+  "iconLibrary": "lucide"
+}
+</file>
+
+<file path="components/BookCard.tsx">
+import Link from 'next/link'
+import { BookOpen } from 'lucide-react'
+
+interface BookCardProps {
+  id: string
+  title: string
+  categoryName?: string
+}
+
+export function BookCard({ id, title, categoryName }: BookCardProps) {
+  return (
+    <Link href={`/books/${id}`} className="block group">
+      <div className="card p-6 h-full transition-all duration-300 hover:shadow-lg">
+        <div className="flex items-start gap-4">
+          <div className="flex-shrink-0 w-12 h-12 rounded-lg bg-accent/10 flex items-center justify-center group-hover:bg-accent group-hover:scale-110 transition-all duration-300">
+            <BookOpen className="w-6 h-6 text-accent group-hover:text-accent-foreground transition-colors duration-300" />
+          </div>
+          <div className="flex-1 min-w-0 space-y-2">
+            <h3 className="font-bold text-lg leading-tight line-clamp-2 group-hover:text-accent transition-colors">
+              {title}
+            </h3>
+            {categoryName && (
+              <p className="text-sm text-muted-foreground font-arabic-sans">
+                {categoryName}
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
+    </Link>
+  )
+}
+</file>
+
+<file path="components/BottomNav.tsx">
+'use client'
+
+import Link from 'next/link'
+import { usePathname } from 'next/navigation'
+import { Home, BookOpen, List, Search } from 'lucide-react'
+
+const navItems = [
+  { href: '/', label: 'الرئيسية', icon: Home },
+  { href: '/topics', label: 'المواضيع', icon: List },
+  { href: '/books', label: 'الكتب', icon: BookOpen },
+  { href: '/search', label: 'البحث', icon: Search },
+]
+
+export function BottomNav() {
+  const pathname = usePathname()
+
+  return (
+    <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-card border-t border-border backdrop-blur-lg supports-[backdrop-filter]:bg-card/95 pb-safe">
+      <div className="flex items-center justify-around h-16">
+        {navItems.map((item) => {
+          const isActive = pathname === item.href || (item.href !== '/' && pathname.startsWith(item.href))
+          const Icon = item.icon
+          
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              className={`flex flex-col items-center justify-center gap-1 px-3 py-2 min-w-0 flex-1 transition-colors ${
+                isActive 
+                  ? 'text-accent' 
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              <Icon className="w-5 h-5" />
+              <span className="text-xs font-arabic-sans">{item.label}</span>
+            </Link>
+          )
+        })}
+      </div>
+    </nav>
+  )
+}
+</file>
+
+<file path="components/Header.tsx">
+'use client'
+
+import Link from 'next/link'
+import { ThemeSwitcher } from './ThemeSwitcher'
+import { BookOpen } from 'lucide-react'
+
+export function Header() {
+  return (
+    <header className="sticky top-0 z-50 w-full border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+      <div className="container flex h-16 items-center px-4 justify-between md:justify-start">
+        <Link href="/" className="flex items-center gap-2 font-bold text-xl">
+          <BookOpen className="w-6 h-6 text-accent" />
+          <span className="hidden md:inline font-arabic">المكتبة العلمية</span>
+        </Link>
+        
+        <nav className="hidden md:flex flex-1 items-center justify-center gap-6 font-arabic-sans">
+          <Link 
+            href="/topics" 
+            className="text-sm font-medium transition-colors hover:text-accent"
+          >
+            المواضيع
+          </Link>
+          <Link 
+            href="/books" 
+            className="text-sm font-medium transition-colors hover:text-accent"
+          >
+            الكتب
+          </Link>
+          <Link 
+            href="/search" 
+            className="text-sm font-medium transition-colors hover:text-accent"
+          >
+            البحث
+          </Link>
+        </nav>
+        
+        <div className="ml-auto">
+          <ThemeSwitcher />
+        </div>
+      </div>
+    </header>
+  )
+}
+</file>
+
+<file path="components/Pagination.tsx">
+'use client'
+
+import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react'
+
+interface PaginationProps {
+  currentPage: number
+  totalPages: number
+  onPageChange: (page: number) => void
+}
+
+export function Pagination({ currentPage, totalPages, onPageChange }: PaginationProps) {
+  if (totalPages <= 1) return null
+
+  const getPageNumbers = () => {
+    const pages: (number | string)[] = []
+    const maxVisible = 5
+
+    if (totalPages <= maxVisible) {
+      for (let i = 1; i <= totalPages; i++) {
+        pages.push(i)
+      }
+    } else {
+      if (currentPage <= 3) {
+        for (let i = 1; i <= 4; i++) {
+          pages.push(i)
+        }
+        pages.push('...')
+        pages.push(totalPages)
+      } else if (currentPage >= totalPages - 2) {
+        pages.push(1)
+        pages.push('...')
+        for (let i = totalPages - 3; i <= totalPages; i++) {
+          pages.push(i)
+        }
+      } else {
+        pages.push(1)
+        pages.push('...')
+        pages.push(currentPage - 1)
+        pages.push(currentPage)
+        pages.push(currentPage + 1)
+        pages.push('...')
+        pages.push(totalPages)
+      }
+    }
+
+    return pages
+  }
+
+  return (
+    <div className="flex items-center justify-center gap-2 font-arabic-sans">
+      <button
+        onClick={() => onPageChange(1)}
+        disabled={currentPage === 1}
+        className="p-2 rounded-lg hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+        aria-label="الصفحة الأولى"
+      >
+        <ChevronsRight className="w-5 h-5" />
+      </button>
+      
+      <button
+        onClick={() => onPageChange(currentPage - 1)}
+        disabled={currentPage === 1}
+        className="p-2 rounded-lg hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+        aria-label="السابق"
+      >
+        <ChevronRight className="w-5 h-5" />
+      </button>
+
+      <div className="flex items-center gap-1">
+        {getPageNumbers().map((page, index) => (
+          typeof page === 'number' ? (
+            <button
+              key={index}
+              onClick={() => onPageChange(page)}
+              className={`min-w-[2.5rem] h-10 px-3 rounded-lg transition-colors ${
+                currentPage === page
+                  ? 'bg-accent text-accent-foreground font-bold'
+                  : 'hover:bg-muted'
+              }`}
+            >
+              {page}
+            </button>
+          ) : (
+            <span key={index} className="px-2 text-muted-foreground">
+              {page}
+            </span>
+          )
+        ))}
+      </div>
+
+      <button
+        onClick={() => onPageChange(currentPage + 1)}
+        disabled={currentPage === totalPages}
+        className="p-2 rounded-lg hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+        aria-label="التالي"
+      >
+        <ChevronLeft className="w-5 h-5" />
+      </button>
+      
+      <button
+        onClick={() => onPageChange(totalPages)}
+        disabled={currentPage === totalPages}
+        className="p-2 rounded-lg hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+        aria-label="الصفحة الأخيرة"
+      >
+        <ChevronsLeft className="w-5 h-5" />
+      </button>
+    </div>
+  )
+}
+</file>
+
+<file path="components/ThemeSwitcher.tsx">
+'use client'
+
+import { useEffect, useState } from 'react'
+import { Sun, Moon } from 'lucide-react'
+
+export type Theme = 'sepia' | 'midnight'
+
+export function ThemeSwitcher() {
+  const [theme, setTheme] = useState<Theme>('sepia')
+  const [mounted, setMounted] = useState(false)
+
+  useEffect(() => {
+    setMounted(true)
+    const savedTheme = localStorage.getItem('theme') as Theme | null
+    const currentTheme = (savedTheme === 'sepia' || savedTheme === 'midnight') ? savedTheme : 'sepia'
+    setTheme(currentTheme)
+    document.documentElement.setAttribute('data-theme', currentTheme)
+  }, [])
+
+  const toggleTheme = () => {
+    const newTheme: Theme = theme === 'sepia' ? 'midnight' : 'sepia'
+    setTheme(newTheme)
+    localStorage.setItem('theme', newTheme)
+    document.documentElement.setAttribute('data-theme', newTheme)
+  }
+
+  if (!mounted) {
+    return null
+  }
+
+  return (
+    <button
+      onClick={toggleTheme}
+      className="p-2 rounded-lg hover:bg-muted transition-colors"
+      aria-label="Toggle theme"
+      title={theme === 'sepia' ? 'Switch to dark mode' : 'Switch to light mode'}
+    >
+      {theme === 'sepia' ? (
+        <Moon className="w-5 h-5" />
+      ) : (
+        <Sun className="w-5 h-5" />
+      )}
+    </button>
+  )
+}
+</file>
+
+<file path="components/Tree.tsx">
+'use client'
+
+import { useState, ReactNode } from 'react'
+import { ChevronLeft } from 'lucide-react'
+
+export interface TreeNode {
+  id: string | number
+  label: string
+  children?: TreeNode[]
+  data?: any
+  isLoading?: boolean
+  hasChildren?: boolean // Indicates if node might have children (for lazy loading)
+}
+
+interface TreeItemProps {
+  node: TreeNode
+  level?: number
+  selectedId?: string | number
+  onSelect?: (node: TreeNode) => void
+  onExpand?: (node: TreeNode) => void
+}
+
+function TreeItem({ node, level = 0, selectedId, onSelect, onExpand }: TreeItemProps) {
+  const [isExpanded, setIsExpanded] = useState(false)
+  const hasChildren = (node.children && node.children.length > 0) || node.hasChildren
+  const isSelected = selectedId === node.id
+
+  const handleExpand = () => {
+    if (!isExpanded && hasChildren) {
+      setIsExpanded(true)
+      // If children not loaded yet, trigger onExpand callback
+      if (!node.children || node.children.length === 0) {
+        onExpand?.(node)
+      }
+    } else if (isExpanded) {
+      setIsExpanded(false)
+    }
+  }
+
+  return (
+    <div>
+      <div
+        className={`tree-node flex items-center gap-2 ${isSelected ? 'selected' : ''}`}
+        style={{ paddingRight: `${level * 1.5}rem` }}
+        onClick={() => {
+          if (hasChildren) {
+            handleExpand()
+          } else {
+            // Only call onSelect for leaf nodes
+            onSelect?.(node)
+          }
+        }}
+      >
+        {hasChildren && (
+          <ChevronLeft 
+            className={`tree-chevron w-4 h-4 flex-shrink-0 transition-transform ${isExpanded ? 'expanded rotate-90' : ''}`}
+          />
+        )}
+        {!hasChildren && <span className="w-4" />}
+        <span className="flex-1 text-sm font-arabic-sans">{node.label}</span>
+        {node.isLoading && (
+          <span className="text-xs text-muted-foreground animate-pulse">جاري التحميل...</span>
+        )}
+      </div>
+      
+      {hasChildren && isExpanded && node.children && node.children.length > 0 && (
+        <div className="space-y-0.5">
+          {node.children.map((child) => (
+            <TreeItem
+              key={child.id}
+              node={child}
+              level={level + 1}
+              selectedId={selectedId}
+              onSelect={onSelect}
+              onExpand={onExpand}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+interface TreeProps {
+  nodes: TreeNode[]
+  selectedId?: string | number
+  onSelect?: (node: TreeNode) => void
+  onExpand?: (node: TreeNode) => void
+  className?: string
+}
+
+export function Tree({ nodes, selectedId, onSelect, onExpand, className = '' }: TreeProps) {
+  return (
+    <div className={`space-y-0.5 ${className}`}>
+      {nodes.map((node) => (
+        <TreeItem
+          key={node.id}
+          node={node}
+          selectedId={selectedId}
+          onSelect={onSelect}
+          onExpand={onExpand}
+        />
+      ))}
+    </div>
+  )
+}
+</file>
+
+<file path="components/ui/button.tsx">
+import * as React from 'react'
+import { Slot } from '@radix-ui/react-slot'
+import { cva, type VariantProps } from 'class-variance-authority'
+
+import { cn } from '@/lib/utils'
+
+const buttonVariants = cva(
+  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-all disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 shrink-0 [&_svg]:shrink-0 outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive",
+  {
+    variants: {
+      variant: {
+        default: 'bg-primary text-primary-foreground hover:bg-primary/90',
+        destructive:
+          'bg-destructive text-white hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40 dark:bg-destructive/60',
+        outline:
+          'border bg-background shadow-xs hover:bg-accent hover:text-accent-foreground dark:bg-input/30 dark:border-input dark:hover:bg-input/50',
+        secondary:
+          'bg-secondary text-secondary-foreground hover:bg-secondary/80',
+        ghost:
+          'hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent/50',
+        link: 'text-primary underline-offset-4 hover:underline',
+      },
+      size: {
+        default: 'h-9 px-4 py-2 has-[>svg]:px-3',
+        sm: 'h-8 rounded-md gap-1.5 px-3 has-[>svg]:px-2.5',
+        lg: 'h-10 rounded-md px-6 has-[>svg]:px-4',
+        icon: 'size-9',
+        'icon-sm': 'size-8',
+        'icon-lg': 'size-10',
+      },
+    },
+    defaultVariants: {
+      variant: 'default',
+      size: 'default',
+    },
+  },
+)
+
+function Button({
+  className,
+  variant,
+  size,
+  asChild = false,
+  ...props
+}: React.ComponentProps<'button'> &
+  VariantProps<typeof buttonVariants> & {
+    asChild?: boolean
+  }) {
+  const Comp = asChild ? Slot : 'button'
+
+  return (
+    <Comp
+      data-slot="button"
+      className={cn(buttonVariants({ variant, size, className }))}
+      {...props}
+    />
+  )
+}
+
+export { Button, buttonVariants }
+</file>
+
+<file path="components/ui/card.tsx">
+import * as React from 'react'
+
+import { cn } from '@/lib/utils'
+
+function Card({ className, ...props }: React.ComponentProps<'div'>) {
+  return (
+    <div
+      data-slot="card"
+      className={cn(
+        'bg-card text-card-foreground flex flex-col gap-6 rounded-xl border py-6 shadow-sm',
+        className,
+      )}
+      {...props}
+    />
+  )
+}
+
+function CardHeader({ className, ...props }: React.ComponentProps<'div'>) {
+  return (
+    <div
+      data-slot="card-header"
+      className={cn(
+        '@container/card-header grid auto-rows-min grid-rows-[auto_auto] items-start gap-2 px-6 has-data-[slot=card-action]:grid-cols-[1fr_auto] [.border-b]:pb-6',
+        className,
+      )}
+      {...props}
+    />
+  )
+}
+
+function CardTitle({ className, ...props }: React.ComponentProps<'div'>) {
+  return (
+    <div
+      data-slot="card-title"
+      className={cn('leading-none font-semibold', className)}
+      {...props}
+    />
+  )
+}
+
+function CardDescription({ className, ...props }: React.ComponentProps<'div'>) {
+  return (
+    <div
+      data-slot="card-description"
+      className={cn('text-muted-foreground text-sm', className)}
+      {...props}
+    />
+  )
+}
+
+function CardAction({ className, ...props }: React.ComponentProps<'div'>) {
+  return (
+    <div
+      data-slot="card-action"
+      className={cn(
+        'col-start-2 row-span-2 row-start-1 self-start justify-self-end',
+        className,
+      )}
+      {...props}
+    />
+  )
+}
+
+function CardContent({ className, ...props }: React.ComponentProps<'div'>) {
+  return (
+    <div
+      data-slot="card-content"
+      className={cn('px-6', className)}
+      {...props}
+    />
+  )
+}
+
+function CardFooter({ className, ...props }: React.ComponentProps<'div'>) {
+  return (
+    <div
+      data-slot="card-footer"
+      className={cn('flex items-center px-6 [.border-t]:pt-6', className)}
+      {...props}
+    />
+  )
+}
+
+export {
+  Card,
+  CardHeader,
+  CardFooter,
+  CardTitle,
+  CardAction,
+  CardDescription,
+  CardContent,
+}
+</file>
+
+<file path="components/ui/dialog.tsx">
+'use client'
+
+import * as React from 'react'
+import * as DialogPrimitive from '@radix-ui/react-dialog'
+import { XIcon } from 'lucide-react'
+
+import { cn } from '@/lib/utils'
+
+function Dialog({
+  ...props
+}: React.ComponentProps<typeof DialogPrimitive.Root>) {
+  return <DialogPrimitive.Root data-slot="dialog" {...props} />
+}
+
+function DialogTrigger({
+  ...props
+}: React.ComponentProps<typeof DialogPrimitive.Trigger>) {
+  return <DialogPrimitive.Trigger data-slot="dialog-trigger" {...props} />
+}
+
+function DialogPortal({
+  ...props
+}: React.ComponentProps<typeof DialogPrimitive.Portal>) {
+  return <DialogPrimitive.Portal data-slot="dialog-portal" {...props} />
+}
+
+function DialogClose({
+  ...props
+}: React.ComponentProps<typeof DialogPrimitive.Close>) {
+  return <DialogPrimitive.Close data-slot="dialog-close" {...props} />
+}
+
+function DialogOverlay({
+  className,
+  ...props
+}: React.ComponentProps<typeof DialogPrimitive.Overlay>) {
+  return (
+    <DialogPrimitive.Overlay
+      data-slot="dialog-overlay"
+      className={cn(
+        'data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 fixed inset-0 z-50 bg-black/50',
+        className,
+      )}
+      {...props}
+    />
+  )
+}
+
+function DialogContent({
+  className,
+  children,
+  showCloseButton = true,
+  ...props
+}: React.ComponentProps<typeof DialogPrimitive.Content> & {
+  showCloseButton?: boolean
+}) {
+  return (
+    <DialogPortal data-slot="dialog-portal">
+      <DialogOverlay />
+      <DialogPrimitive.Content
+        data-slot="dialog-content"
+        className={cn(
+          'bg-background data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 fixed top-[50%] left-[50%] z-50 grid w-full max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] gap-4 rounded-lg border p-6 shadow-lg duration-200 sm:max-w-lg',
+          className,
+        )}
+        {...props}
+      >
+        {children}
+        {showCloseButton && (
+          <DialogPrimitive.Close
+            data-slot="dialog-close"
+            className="ring-offset-background focus:ring-ring data-[state=open]:bg-accent data-[state=open]:text-muted-foreground absolute top-4 right-4 rounded-xs opacity-70 transition-opacity hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4"
+          >
+            <XIcon />
+            <span className="sr-only">Close</span>
+          </DialogPrimitive.Close>
+        )}
+      </DialogPrimitive.Content>
+    </DialogPortal>
+  )
+}
+
+function DialogHeader({ className, ...props }: React.ComponentProps<'div'>) {
+  return (
+    <div
+      data-slot="dialog-header"
+      className={cn('flex flex-col gap-2 text-center sm:text-left', className)}
+      {...props}
+    />
+  )
+}
+
+function DialogFooter({ className, ...props }: React.ComponentProps<'div'>) {
+  return (
+    <div
+      data-slot="dialog-footer"
+      className={cn(
+        'flex flex-col-reverse gap-2 sm:flex-row sm:justify-end',
+        className,
+      )}
+      {...props}
+    />
+  )
+}
+
+function DialogTitle({
+  className,
+  ...props
+}: React.ComponentProps<typeof DialogPrimitive.Title>) {
+  return (
+    <DialogPrimitive.Title
+      data-slot="dialog-title"
+      className={cn('text-lg leading-none font-semibold', className)}
+      {...props}
+    />
+  )
+}
+
+function DialogDescription({
+  className,
+  ...props
+}: React.ComponentProps<typeof DialogPrimitive.Description>) {
+  return (
+    <DialogPrimitive.Description
+      data-slot="dialog-description"
+      className={cn('text-muted-foreground text-sm', className)}
+      {...props}
+    />
+  )
+}
+
+export {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogOverlay,
+  DialogPortal,
+  DialogTitle,
+  DialogTrigger,
+}
+</file>
+
+<file path="components/ui/dropdown-menu.tsx">
+'use client'
+
+import * as React from 'react'
+import * as DropdownMenuPrimitive from '@radix-ui/react-dropdown-menu'
+import { CheckIcon, ChevronRightIcon, CircleIcon } from 'lucide-react'
+
+import { cn } from '@/lib/utils'
+
+function DropdownMenu({
+  ...props
+}: React.ComponentProps<typeof DropdownMenuPrimitive.Root>) {
+  return <DropdownMenuPrimitive.Root data-slot="dropdown-menu" {...props} />
+}
+
+function DropdownMenuPortal({
+  ...props
+}: React.ComponentProps<typeof DropdownMenuPrimitive.Portal>) {
+  return (
+    <DropdownMenuPrimitive.Portal data-slot="dropdown-menu-portal" {...props} />
+  )
+}
+
+function DropdownMenuTrigger({
+  ...props
+}: React.ComponentProps<typeof DropdownMenuPrimitive.Trigger>) {
+  return (
+    <DropdownMenuPrimitive.Trigger
+      data-slot="dropdown-menu-trigger"
+      {...props}
+    />
+  )
+}
+
+function DropdownMenuContent({
+  className,
+  sideOffset = 4,
+  ...props
+}: React.ComponentProps<typeof DropdownMenuPrimitive.Content>) {
+  return (
+    <DropdownMenuPrimitive.Portal>
+      <DropdownMenuPrimitive.Content
+        data-slot="dropdown-menu-content"
+        sideOffset={sideOffset}
+        className={cn(
+          'bg-popover text-popover-foreground data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 z-50 max-h-(--radix-dropdown-menu-content-available-height) min-w-[8rem] origin-(--radix-dropdown-menu-content-transform-origin) overflow-x-hidden overflow-y-auto rounded-md border p-1 shadow-md',
+          className,
+        )}
+        {...props}
+      />
+    </DropdownMenuPrimitive.Portal>
+  )
+}
+
+function DropdownMenuGroup({
+  ...props
+}: React.ComponentProps<typeof DropdownMenuPrimitive.Group>) {
+  return (
+    <DropdownMenuPrimitive.Group data-slot="dropdown-menu-group" {...props} />
+  )
+}
+
+function DropdownMenuItem({
+  className,
+  inset,
+  variant = 'default',
+  ...props
+}: React.ComponentProps<typeof DropdownMenuPrimitive.Item> & {
+  inset?: boolean
+  variant?: 'default' | 'destructive'
+}) {
+  return (
+    <DropdownMenuPrimitive.Item
+      data-slot="dropdown-menu-item"
+      data-inset={inset}
+      data-variant={variant}
+      className={cn(
+        "focus:bg-accent focus:text-accent-foreground data-[variant=destructive]:text-destructive data-[variant=destructive]:focus:bg-destructive/10 dark:data-[variant=destructive]:focus:bg-destructive/20 data-[variant=destructive]:focus:text-destructive data-[variant=destructive]:*:[svg]:!text-destructive [&_svg:not([class*='text-'])]:text-muted-foreground relative flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-hidden select-none data-[disabled]:pointer-events-none data-[disabled]:opacity-50 data-[inset]:pl-8 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+        className,
+      )}
+      {...props}
+    />
+  )
+}
+
+function DropdownMenuCheckboxItem({
+  className,
+  children,
+  checked,
+  ...props
+}: React.ComponentProps<typeof DropdownMenuPrimitive.CheckboxItem>) {
+  return (
+    <DropdownMenuPrimitive.CheckboxItem
+      data-slot="dropdown-menu-checkbox-item"
+      className={cn(
+        "focus:bg-accent focus:text-accent-foreground relative flex cursor-default items-center gap-2 rounded-sm py-1.5 pr-2 pl-8 text-sm outline-hidden select-none data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+        className,
+      )}
+      checked={checked}
+      {...props}
+    >
+      <span className="pointer-events-none absolute left-2 flex size-3.5 items-center justify-center">
+        <DropdownMenuPrimitive.ItemIndicator>
+          <CheckIcon className="size-4" />
+        </DropdownMenuPrimitive.ItemIndicator>
+      </span>
+      {children}
+    </DropdownMenuPrimitive.CheckboxItem>
+  )
+}
+
+function DropdownMenuRadioGroup({
+  ...props
+}: React.ComponentProps<typeof DropdownMenuPrimitive.RadioGroup>) {
+  return (
+    <DropdownMenuPrimitive.RadioGroup
+      data-slot="dropdown-menu-radio-group"
+      {...props}
+    />
+  )
+}
+
+function DropdownMenuRadioItem({
+  className,
+  children,
+  ...props
+}: React.ComponentProps<typeof DropdownMenuPrimitive.RadioItem>) {
+  return (
+    <DropdownMenuPrimitive.RadioItem
+      data-slot="dropdown-menu-radio-item"
+      className={cn(
+        "focus:bg-accent focus:text-accent-foreground relative flex cursor-default items-center gap-2 rounded-sm py-1.5 pr-2 pl-8 text-sm outline-hidden select-none data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+        className,
+      )}
+      {...props}
+    >
+      <span className="pointer-events-none absolute left-2 flex size-3.5 items-center justify-center">
+        <DropdownMenuPrimitive.ItemIndicator>
+          <CircleIcon className="size-2 fill-current" />
+        </DropdownMenuPrimitive.ItemIndicator>
+      </span>
+      {children}
+    </DropdownMenuPrimitive.RadioItem>
+  )
+}
+
+function DropdownMenuLabel({
+  className,
+  inset,
+  ...props
+}: React.ComponentProps<typeof DropdownMenuPrimitive.Label> & {
+  inset?: boolean
+}) {
+  return (
+    <DropdownMenuPrimitive.Label
+      data-slot="dropdown-menu-label"
+      data-inset={inset}
+      className={cn(
+        'px-2 py-1.5 text-sm font-medium data-[inset]:pl-8',
+        className,
+      )}
+      {...props}
+    />
+  )
+}
+
+function DropdownMenuSeparator({
+  className,
+  ...props
+}: React.ComponentProps<typeof DropdownMenuPrimitive.Separator>) {
+  return (
+    <DropdownMenuPrimitive.Separator
+      data-slot="dropdown-menu-separator"
+      className={cn('bg-border -mx-1 my-1 h-px', className)}
+      {...props}
+    />
+  )
+}
+
+function DropdownMenuShortcut({
+  className,
+  ...props
+}: React.ComponentProps<'span'>) {
+  return (
+    <span
+      data-slot="dropdown-menu-shortcut"
+      className={cn(
+        'text-muted-foreground ml-auto text-xs tracking-widest',
+        className,
+      )}
+      {...props}
+    />
+  )
+}
+
+function DropdownMenuSub({
+  ...props
+}: React.ComponentProps<typeof DropdownMenuPrimitive.Sub>) {
+  return <DropdownMenuPrimitive.Sub data-slot="dropdown-menu-sub" {...props} />
+}
+
+function DropdownMenuSubTrigger({
+  className,
+  inset,
+  children,
+  ...props
+}: React.ComponentProps<typeof DropdownMenuPrimitive.SubTrigger> & {
+  inset?: boolean
+}) {
+  return (
+    <DropdownMenuPrimitive.SubTrigger
+      data-slot="dropdown-menu-sub-trigger"
+      data-inset={inset}
+      className={cn(
+        "focus:bg-accent focus:text-accent-foreground data-[state=open]:bg-accent data-[state=open]:text-accent-foreground [&_svg:not([class*='text-'])]:text-muted-foreground flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-hidden select-none data-[inset]:pl-8 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+        className,
+      )}
+      {...props}
+    >
+      {children}
+      <ChevronRightIcon className="ml-auto size-4" />
+    </DropdownMenuPrimitive.SubTrigger>
+  )
+}
+
+function DropdownMenuSubContent({
+  className,
+  ...props
+}: React.ComponentProps<typeof DropdownMenuPrimitive.SubContent>) {
+  return (
+    <DropdownMenuPrimitive.SubContent
+      data-slot="dropdown-menu-sub-content"
+      className={cn(
+        'bg-popover text-popover-foreground data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 z-50 min-w-[8rem] origin-(--radix-dropdown-menu-content-transform-origin) overflow-hidden rounded-md border p-1 shadow-lg',
+        className,
+      )}
+      {...props}
+    />
+  )
+}
+
+export {
+  DropdownMenu,
+  DropdownMenuPortal,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuLabel,
+  DropdownMenuItem,
+  DropdownMenuCheckboxItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuShortcut,
+  DropdownMenuSub,
+  DropdownMenuSubTrigger,
+  DropdownMenuSubContent,
+}
+</file>
+
+<file path="components/ui/input.tsx">
+import * as React from 'react'
+
+import { cn } from '@/lib/utils'
+
+function Input({ className, type, ...props }: React.ComponentProps<'input'>) {
+  return (
+    <input
+      type={type}
+      data-slot="input"
+      className={cn(
+        'file:text-foreground placeholder:text-muted-foreground selection:bg-primary selection:text-primary-foreground dark:bg-input/30 border-input h-9 w-full min-w-0 rounded-md border bg-transparent px-3 py-1 text-base shadow-xs transition-[color,box-shadow] outline-none file:inline-flex file:h-7 file:border-0 file:bg-transparent file:text-sm file:font-medium disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 md:text-sm',
+        'focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]',
+        'aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive',
+        className,
+      )}
+      {...props}
+    />
+  )
+}
+
+export { Input }
+</file>
+
+<file path="components/ui/label.tsx">
+'use client'
+
+import * as React from 'react'
+import * as LabelPrimitive from '@radix-ui/react-label'
+
+import { cn } from '@/lib/utils'
+
+function Label({
+  className,
+  ...props
+}: React.ComponentProps<typeof LabelPrimitive.Root>) {
+  return (
+    <LabelPrimitive.Root
+      data-slot="label"
+      className={cn(
+        'flex items-center gap-2 text-sm leading-none font-medium select-none group-data-[disabled=true]:pointer-events-none group-data-[disabled=true]:opacity-50 peer-disabled:cursor-not-allowed peer-disabled:opacity-50',
+        className,
+      )}
+      {...props}
+    />
+  )
+}
+
+export { Label }
+</file>
+
+<file path="components/ui/scroll-area.tsx">
+'use client'
+
+import * as React from 'react'
+import * as ScrollAreaPrimitive from '@radix-ui/react-scroll-area'
+
+import { cn } from '@/lib/utils'
+
+function ScrollArea({
+  className,
+  children,
+  ...props
+}: React.ComponentProps<typeof ScrollAreaPrimitive.Root>) {
+  return (
+    <ScrollAreaPrimitive.Root
+      data-slot="scroll-area"
+      className={cn('relative', className)}
+      {...props}
+    >
+      <ScrollAreaPrimitive.Viewport
+        data-slot="scroll-area-viewport"
+        className="focus-visible:ring-ring/50 size-full rounded-[inherit] transition-[color,box-shadow] outline-none focus-visible:ring-[3px] focus-visible:outline-1"
+      >
+        {children}
+      </ScrollAreaPrimitive.Viewport>
+      <ScrollBar />
+      <ScrollAreaPrimitive.Corner />
+    </ScrollAreaPrimitive.Root>
+  )
+}
+
+function ScrollBar({
+  className,
+  orientation = 'vertical',
+  ...props
+}: React.ComponentProps<typeof ScrollAreaPrimitive.ScrollAreaScrollbar>) {
+  return (
+    <ScrollAreaPrimitive.ScrollAreaScrollbar
+      data-slot="scroll-area-scrollbar"
+      orientation={orientation}
+      className={cn(
+        'flex touch-none p-px transition-colors select-none',
+        orientation === 'vertical' &&
+          'h-full w-2.5 border-l border-l-transparent',
+        orientation === 'horizontal' &&
+          'h-2.5 flex-col border-t border-t-transparent',
+        className,
+      )}
+      {...props}
+    >
+      <ScrollAreaPrimitive.ScrollAreaThumb
+        data-slot="scroll-area-thumb"
+        className="bg-border relative flex-1 rounded-full"
+      />
+    </ScrollAreaPrimitive.ScrollAreaScrollbar>
+  )
+}
+
+export { ScrollArea, ScrollBar }
+</file>
+
+<file path="components/ui/separator.tsx">
+'use client'
+
+import * as React from 'react'
+import * as SeparatorPrimitive from '@radix-ui/react-separator'
+
+import { cn } from '@/lib/utils'
+
+function Separator({
+  className,
+  orientation = 'horizontal',
+  decorative = true,
+  ...props
+}: React.ComponentProps<typeof SeparatorPrimitive.Root>) {
+  return (
+    <SeparatorPrimitive.Root
+      data-slot="separator"
+      decorative={decorative}
+      orientation={orientation}
+      className={cn(
+        'bg-border shrink-0 data-[orientation=horizontal]:h-px data-[orientation=horizontal]:w-full data-[orientation=vertical]:h-full data-[orientation=vertical]:w-px',
+        className,
+      )}
+      {...props}
+    />
+  )
+}
+
+export { Separator }
+</file>
+
+<file path="components/ui/sheet.tsx">
+'use client'
+
+import * as React from 'react'
+import * as SheetPrimitive from '@radix-ui/react-dialog'
+import { XIcon } from 'lucide-react'
+
+import { cn } from '@/lib/utils'
+
+function Sheet({ ...props }: React.ComponentProps<typeof SheetPrimitive.Root>) {
+  return <SheetPrimitive.Root data-slot="sheet" {...props} />
+}
+
+function SheetTrigger({
+  ...props
+}: React.ComponentProps<typeof SheetPrimitive.Trigger>) {
+  return <SheetPrimitive.Trigger data-slot="sheet-trigger" {...props} />
+}
+
+function SheetClose({
+  ...props
+}: React.ComponentProps<typeof SheetPrimitive.Close>) {
+  return <SheetPrimitive.Close data-slot="sheet-close" {...props} />
+}
+
+function SheetPortal({
+  ...props
+}: React.ComponentProps<typeof SheetPrimitive.Portal>) {
+  return <SheetPrimitive.Portal data-slot="sheet-portal" {...props} />
+}
+
+function SheetOverlay({
+  className,
+  ...props
+}: React.ComponentProps<typeof SheetPrimitive.Overlay>) {
+  return (
+    <SheetPrimitive.Overlay
+      data-slot="sheet-overlay"
+      className={cn(
+        'data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 fixed inset-0 z-50 bg-black/50',
+        className,
+      )}
+      {...props}
+    />
+  )
+}
+
+function SheetContent({
+  className,
+  children,
+  side = 'right',
+  ...props
+}: React.ComponentProps<typeof SheetPrimitive.Content> & {
+  side?: 'top' | 'right' | 'bottom' | 'left'
+}) {
+  return (
+    <SheetPortal>
+      <SheetOverlay />
+      <SheetPrimitive.Content
+        data-slot="sheet-content"
+        className={cn(
+          'bg-background data-[state=open]:animate-in data-[state=closed]:animate-out fixed z-50 flex flex-col gap-4 shadow-lg transition ease-in-out data-[state=closed]:duration-300 data-[state=open]:duration-500',
+          side === 'right' &&
+            'data-[state=closed]:slide-out-to-right data-[state=open]:slide-in-from-right inset-y-0 right-0 h-full w-3/4 border-l sm:max-w-sm',
+          side === 'left' &&
+            'data-[state=closed]:slide-out-to-left data-[state=open]:slide-in-from-left inset-y-0 left-0 h-full w-3/4 border-r sm:max-w-sm',
+          side === 'top' &&
+            'data-[state=closed]:slide-out-to-top data-[state=open]:slide-in-from-top inset-x-0 top-0 h-auto border-b',
+          side === 'bottom' &&
+            'data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom inset-x-0 bottom-0 h-auto border-t',
+          className,
+        )}
+        {...props}
+      >
+        {children}
+        <SheetPrimitive.Close className="ring-offset-background focus:ring-ring data-[state=open]:bg-secondary absolute top-4 right-4 rounded-xs opacity-70 transition-opacity hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none">
+          <XIcon className="size-4" />
+          <span className="sr-only">Close</span>
+        </SheetPrimitive.Close>
+      </SheetPrimitive.Content>
+    </SheetPortal>
+  )
+}
+
+function SheetHeader({ className, ...props }: React.ComponentProps<'div'>) {
+  return (
+    <div
+      data-slot="sheet-header"
+      className={cn('flex flex-col gap-1.5 p-4', className)}
+      {...props}
+    />
+  )
+}
+
+function SheetFooter({ className, ...props }: React.ComponentProps<'div'>) {
+  return (
+    <div
+      data-slot="sheet-footer"
+      className={cn('mt-auto flex flex-col gap-2 p-4', className)}
+      {...props}
+    />
+  )
+}
+
+function SheetTitle({
+  className,
+  ...props
+}: React.ComponentProps<typeof SheetPrimitive.Title>) {
+  return (
+    <SheetPrimitive.Title
+      data-slot="sheet-title"
+      className={cn('text-foreground font-semibold', className)}
+      {...props}
+    />
+  )
+}
+
+function SheetDescription({
+  className,
+  ...props
+}: React.ComponentProps<typeof SheetPrimitive.Description>) {
+  return (
+    <SheetPrimitive.Description
+      data-slot="sheet-description"
+      className={cn('text-muted-foreground text-sm', className)}
+      {...props}
+    />
+  )
+}
+
+export {
+  Sheet,
+  SheetTrigger,
+  SheetClose,
+  SheetContent,
+  SheetHeader,
+  SheetFooter,
+  SheetTitle,
+  SheetDescription,
+}
+</file>
+
+<file path="components/ui/skeleton.tsx">
+import { cn } from '@/lib/utils'
+
+function Skeleton({ className, ...props }: React.ComponentProps<'div'>) {
+  return (
+    <div
+      data-slot="skeleton"
+      className={cn('bg-accent animate-pulse rounded-md', className)}
+      {...props}
+    />
+  )
+}
+
+export { Skeleton }
+</file>
+
+<file path="components/ui/textarea.tsx">
+import * as React from 'react'
+
+import { cn } from '@/lib/utils'
+
+function Textarea({ className, ...props }: React.ComponentProps<'textarea'>) {
+  return (
+    <textarea
+      data-slot="textarea"
+      className={cn(
+        'border-input placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive dark:bg-input/30 flex field-sizing-content min-h-16 w-full rounded-md border bg-transparent px-3 py-2 text-base shadow-xs transition-[color,box-shadow] outline-none focus-visible:ring-[3px] disabled:cursor-not-allowed disabled:opacity-50 md:text-sm',
+        className,
+      )}
+      {...props}
+    />
+  )
+}
+
+export { Textarea }
+</file>
+
+<file path="components/ui/toast.tsx">
+'use client'
+
+import * as React from 'react'
+import * as ToastPrimitives from '@radix-ui/react-toast'
+import { cva, type VariantProps } from 'class-variance-authority'
+import { X } from 'lucide-react'
+
+import { cn } from '@/lib/utils'
+
+const ToastProvider = ToastPrimitives.Provider
+
+const ToastViewport = React.forwardRef<
+  React.ElementRef<typeof ToastPrimitives.Viewport>,
+  React.ComponentPropsWithoutRef<typeof ToastPrimitives.Viewport>
+>(({ className, ...props }, ref) => (
+  <ToastPrimitives.Viewport
+    ref={ref}
+    className={cn(
+      'fixed top-0 z-[100] flex max-h-screen w-full flex-col-reverse p-4 sm:bottom-0 sm:right-0 sm:top-auto sm:flex-col md:max-w-[420px]',
+      className,
+    )}
+    {...props}
+  />
+))
+ToastViewport.displayName = ToastPrimitives.Viewport.displayName
+
+const toastVariants = cva(
+  'group pointer-events-auto relative flex w-full items-center justify-between space-x-4 overflow-hidden rounded-md border p-6 pr-8 shadow-lg transition-all data-[swipe=cancel]:translate-x-0 data-[swipe=end]:translate-x-[var(--radix-toast-swipe-end-x)] data-[swipe=move]:translate-x-[var(--radix-toast-swipe-move-x)] data-[swipe=move]:transition-none data-[state=open]:animate-in data-[state=closed]:animate-out data-[swipe=end]:animate-out data-[state=closed]:fade-out-80 data-[state=closed]:slide-out-to-right-full data-[state=open]:slide-in-from-top-full data-[state=open]:sm:slide-in-from-bottom-full',
+  {
+    variants: {
+      variant: {
+        default: 'border bg-background text-foreground',
+        destructive:
+          'destructive group border-destructive bg-destructive text-destructive-foreground',
+      },
+    },
+    defaultVariants: {
+      variant: 'default',
+    },
+  },
+)
+
+const Toast = React.forwardRef<
+  React.ElementRef<typeof ToastPrimitives.Root>,
+  React.ComponentPropsWithoutRef<typeof ToastPrimitives.Root> &
+    VariantProps<typeof toastVariants>
+>(({ className, variant, ...props }, ref) => {
+  return (
+    <ToastPrimitives.Root
+      ref={ref}
+      className={cn(toastVariants({ variant }), className)}
+      {...props}
+    />
+  )
+})
+Toast.displayName = ToastPrimitives.Root.displayName
+
+const ToastAction = React.forwardRef<
+  React.ElementRef<typeof ToastPrimitives.Action>,
+  React.ComponentPropsWithoutRef<typeof ToastPrimitives.Action>
+>(({ className, ...props }, ref) => (
+  <ToastPrimitives.Action
+    ref={ref}
+    className={cn(
+      'inline-flex h-8 shrink-0 items-center justify-center rounded-md border bg-transparent px-3 text-sm font-medium ring-offset-background transition-colors hover:bg-secondary focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 group-[.destructive]:border-muted/40 group-[.destructive]:hover:border-destructive/30 group-[.destructive]:hover:bg-destructive group-[.destructive]:hover:text-destructive-foreground group-[.destructive]:focus:ring-destructive',
+      className,
+    )}
+    {...props}
+  />
+))
+ToastAction.displayName = ToastPrimitives.Action.displayName
+
+const ToastClose = React.forwardRef<
+  React.ElementRef<typeof ToastPrimitives.Close>,
+  React.ComponentPropsWithoutRef<typeof ToastPrimitives.Close>
+>(({ className, ...props }, ref) => (
+  <ToastPrimitives.Close
+    ref={ref}
+    className={cn(
+      'absolute right-2 top-2 rounded-md p-1 text-foreground/50 opacity-0 transition-opacity hover:text-foreground focus:opacity-100 focus:outline-none focus:ring-2 group-hover:opacity-100 group-[.destructive]:text-red-300 group-[.destructive]:hover:text-red-50 group-[.destructive]:focus:ring-red-400 group-[.destructive]:focus:ring-offset-red-600',
+      className,
+    )}
+    toast-close=""
+    {...props}
+  >
+    <X className="h-4 w-4" />
+  </ToastPrimitives.Close>
+))
+ToastClose.displayName = ToastPrimitives.Close.displayName
+
+const ToastTitle = React.forwardRef<
+  React.ElementRef<typeof ToastPrimitives.Title>,
+  React.ComponentPropsWithoutRef<typeof ToastPrimitives.Title>
+>(({ className, ...props }, ref) => (
+  <ToastPrimitives.Title
+    ref={ref}
+    className={cn('text-sm font-semibold', className)}
+    {...props}
+  />
+))
+ToastTitle.displayName = ToastPrimitives.Title.displayName
+
+const ToastDescription = React.forwardRef<
+  React.ElementRef<typeof ToastPrimitives.Description>,
+  React.ComponentPropsWithoutRef<typeof ToastPrimitives.Description>
+>(({ className, ...props }, ref) => (
+  <ToastPrimitives.Description
+    ref={ref}
+    className={cn('text-sm opacity-90', className)}
+    {...props}
+  />
+))
+ToastDescription.displayName = ToastPrimitives.Description.displayName
+
+type ToastProps = React.ComponentPropsWithoutRef<typeof Toast>
+
+type ToastActionElement = React.ReactElement<typeof ToastAction>
+
+export {
+  type ToastProps,
+  type ToastActionElement,
+  ToastProvider,
+  ToastViewport,
+  Toast,
+  ToastTitle,
+  ToastDescription,
+  ToastClose,
+  ToastAction,
+}
+</file>
+
+<file path="components/ui/toaster.tsx">
+'use client'
+
+import { useToast } from '@/hooks/use-toast'
+import {
+  Toast,
+  ToastClose,
+  ToastDescription,
+  ToastProvider,
+  ToastTitle,
+  ToastViewport,
+} from '@/components/ui/toast'
+
+export function Toaster() {
+  const { toasts } = useToast()
+
+  return (
+    <ToastProvider>
+      {toasts.map(function ({ id, title, description, action, ...props }) {
+        return (
+          <Toast key={id} {...props}>
+            <div className="grid gap-1">
+              {title && <ToastTitle>{title}</ToastTitle>}
+              {description && (
+                <ToastDescription>{description}</ToastDescription>
+              )}
+            </div>
+            {action}
+            <ToastClose />
+          </Toast>
+        )
+      })}
+      <ToastViewport />
+    </ToastProvider>
+  )
+}
+</file>
+
+<file path="components/ui/toggle-group.tsx">
+'use client'
+
+import * as React from 'react'
+import * as ToggleGroupPrimitive from '@radix-ui/react-toggle-group'
+import { type VariantProps } from 'class-variance-authority'
+
+import { cn } from '@/lib/utils'
+import { toggleVariants } from '@/components/ui/toggle'
+
+const ToggleGroupContext = React.createContext<
+  VariantProps<typeof toggleVariants>
+>({
+  size: 'default',
+  variant: 'default',
+})
+
+function ToggleGroup({
+  className,
+  variant,
+  size,
+  children,
+  ...props
+}: React.ComponentProps<typeof ToggleGroupPrimitive.Root> &
+  VariantProps<typeof toggleVariants>) {
+  return (
+    <ToggleGroupPrimitive.Root
+      data-slot="toggle-group"
+      data-variant={variant}
+      data-size={size}
+      className={cn(
+        'group/toggle-group flex w-fit items-center rounded-md data-[variant=outline]:shadow-xs',
+        className,
+      )}
+      {...props}
+    >
+      <ToggleGroupContext.Provider value={{ variant, size }}>
+        {children}
+      </ToggleGroupContext.Provider>
+    </ToggleGroupPrimitive.Root>
+  )
+}
+
+function ToggleGroupItem({
+  className,
+  children,
+  variant,
+  size,
+  ...props
+}: React.ComponentProps<typeof ToggleGroupPrimitive.Item> &
+  VariantProps<typeof toggleVariants>) {
+  const context = React.useContext(ToggleGroupContext)
+
+  return (
+    <ToggleGroupPrimitive.Item
+      data-slot="toggle-group-item"
+      data-variant={context.variant || variant}
+      data-size={context.size || size}
+      className={cn(
+        toggleVariants({
+          variant: context.variant || variant,
+          size: context.size || size,
+        }),
+        'min-w-0 flex-1 shrink-0 rounded-none shadow-none first:rounded-l-md last:rounded-r-md focus:z-10 focus-visible:z-10 data-[variant=outline]:border-l-0 data-[variant=outline]:first:border-l',
+        className,
+      )}
+      {...props}
+    >
+      {children}
+    </ToggleGroupPrimitive.Item>
+  )
+}
+
+export { ToggleGroup, ToggleGroupItem }
+</file>
+
+<file path="components/ui/toggle.tsx">
+'use client'
+
+import * as React from 'react'
+import * as TogglePrimitive from '@radix-ui/react-toggle'
+import { cva, type VariantProps } from 'class-variance-authority'
+
+import { cn } from '@/lib/utils'
+
+const toggleVariants = cva(
+  "inline-flex items-center justify-center gap-2 rounded-md text-sm font-medium hover:bg-muted hover:text-muted-foreground disabled:pointer-events-none disabled:opacity-50 data-[state=on]:bg-accent data-[state=on]:text-accent-foreground [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 [&_svg]:shrink-0 focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] outline-none transition-[color,box-shadow] aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive whitespace-nowrap",
+  {
+    variants: {
+      variant: {
+        default: 'bg-transparent',
+        outline:
+          'border border-input bg-transparent shadow-xs hover:bg-accent hover:text-accent-foreground',
+      },
+      size: {
+        default: 'h-9 px-2 min-w-9',
+        sm: 'h-8 px-1.5 min-w-8',
+        lg: 'h-10 px-2.5 min-w-10',
+      },
+    },
+    defaultVariants: {
+      variant: 'default',
+      size: 'default',
+    },
+  },
+)
+
+function Toggle({
+  className,
+  variant,
+  size,
+  ...props
+}: React.ComponentProps<typeof TogglePrimitive.Root> &
+  VariantProps<typeof toggleVariants>) {
+  return (
+    <TogglePrimitive.Root
+      data-slot="toggle"
+      className={cn(toggleVariants({ variant, size, className }))}
+      {...props}
+    />
+  )
+}
+
+export { Toggle, toggleVariants }
+</file>
+
+<file path="components/ui/tooltip.tsx">
+'use client'
+
+import * as React from 'react'
+import * as TooltipPrimitive from '@radix-ui/react-tooltip'
+
+import { cn } from '@/lib/utils'
+
+function TooltipProvider({
+  delayDuration = 0,
+  ...props
+}: React.ComponentProps<typeof TooltipPrimitive.Provider>) {
+  return (
+    <TooltipPrimitive.Provider
+      data-slot="tooltip-provider"
+      delayDuration={delayDuration}
+      {...props}
+    />
+  )
+}
+
+function Tooltip({
+  ...props
+}: React.ComponentProps<typeof TooltipPrimitive.Root>) {
+  return (
+    <TooltipProvider>
+      <TooltipPrimitive.Root data-slot="tooltip" {...props} />
+    </TooltipProvider>
+  )
+}
+
+function TooltipTrigger({
+  ...props
+}: React.ComponentProps<typeof TooltipPrimitive.Trigger>) {
+  return <TooltipPrimitive.Trigger data-slot="tooltip-trigger" {...props} />
+}
+
+function TooltipContent({
+  className,
+  sideOffset = 0,
+  children,
+  ...props
+}: React.ComponentProps<typeof TooltipPrimitive.Content>) {
+  return (
+    <TooltipPrimitive.Portal>
+      <TooltipPrimitive.Content
+        data-slot="tooltip-content"
+        sideOffset={sideOffset}
+        className={cn(
+          'bg-foreground text-background animate-in fade-in-0 zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 z-50 w-fit origin-(--radix-tooltip-content-transform-origin) rounded-md px-3 py-1.5 text-xs text-balance',
+          className,
+        )}
+        {...props}
+      >
+        {children}
+        <TooltipPrimitive.Arrow className="bg-foreground fill-foreground z-50 size-2.5 translate-y-[calc(-50%_-_2px)] rotate-45 rounded-[2px]" />
+      </TooltipPrimitive.Content>
+    </TooltipPrimitive.Portal>
+  )
+}
+
+export { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider }
+</file>
+
+<file path="components/ui/use-mobile.tsx">
+import * as React from 'react'
+
+const MOBILE_BREAKPOINT = 768
+
+export function useIsMobile() {
+  const [isMobile, setIsMobile] = React.useState<boolean | undefined>(undefined)
+
+  React.useEffect(() => {
+    const mql = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT - 1}px)`)
+    const onChange = () => {
+      setIsMobile(window.innerWidth < MOBILE_BREAKPOINT)
+    }
+    mql.addEventListener('change', onChange)
+    setIsMobile(window.innerWidth < MOBILE_BREAKPOINT)
+    return () => mql.removeEventListener('change', onChange)
+  }, [])
+
+  return !!isMobile
+}
+</file>
+
+<file path="components/ui/use-toast.ts">
+'use client'
+
+// Inspired by react-hot-toast library
+import * as React from 'react'
+
+import type { ToastActionElement, ToastProps } from '@/components/ui/toast'
+
+const TOAST_LIMIT = 1
+const TOAST_REMOVE_DELAY = 1000000
+
+type ToasterToast = ToastProps & {
+  id: string
+  title?: React.ReactNode
+  description?: React.ReactNode
+  action?: ToastActionElement
+}
+
+const actionTypes = {
+  ADD_TOAST: 'ADD_TOAST',
+  UPDATE_TOAST: 'UPDATE_TOAST',
+  DISMISS_TOAST: 'DISMISS_TOAST',
+  REMOVE_TOAST: 'REMOVE_TOAST',
+} as const
+
+let count = 0
+
+function genId() {
+  count = (count + 1) % Number.MAX_SAFE_INTEGER
+  return count.toString()
+}
+
+type ActionType = typeof actionTypes
+
+type Action =
+  | {
+      type: ActionType['ADD_TOAST']
+      toast: ToasterToast
+    }
+  | {
+      type: ActionType['UPDATE_TOAST']
+      toast: Partial<ToasterToast>
+    }
+  | {
+      type: ActionType['DISMISS_TOAST']
+      toastId?: ToasterToast['id']
+    }
+  | {
+      type: ActionType['REMOVE_TOAST']
+      toastId?: ToasterToast['id']
+    }
+
+interface State {
+  toasts: ToasterToast[]
+}
+
+const toastTimeouts = new Map<string, ReturnType<typeof setTimeout>>()
+
+const addToRemoveQueue = (toastId: string) => {
+  if (toastTimeouts.has(toastId)) {
+    return
+  }
+
+  const timeout = setTimeout(() => {
+    toastTimeouts.delete(toastId)
+    dispatch({
+      type: 'REMOVE_TOAST',
+      toastId: toastId,
+    })
+  }, TOAST_REMOVE_DELAY)
+
+  toastTimeouts.set(toastId, timeout)
+}
+
+export const reducer = (state: State, action: Action): State => {
+  switch (action.type) {
+    case 'ADD_TOAST':
+      return {
+        ...state,
+        toasts: [action.toast, ...state.toasts].slice(0, TOAST_LIMIT),
+      }
+
+    case 'UPDATE_TOAST':
+      return {
+        ...state,
+        toasts: state.toasts.map((t) =>
+          t.id === action.toast.id ? { ...t, ...action.toast } : t,
+        ),
+      }
+
+    case 'DISMISS_TOAST': {
+      const { toastId } = action
+
+      // ! Side effects ! - This could be extracted into a dismissToast() action,
+      // but I'll keep it here for simplicity
+      if (toastId) {
+        addToRemoveQueue(toastId)
+      } else {
+        state.toasts.forEach((toast) => {
+          addToRemoveQueue(toast.id)
+        })
+      }
+
+      return {
+        ...state,
+        toasts: state.toasts.map((t) =>
+          t.id === toastId || toastId === undefined
+            ? {
+                ...t,
+                open: false,
+              }
+            : t,
+        ),
+      }
+    }
+    case 'REMOVE_TOAST':
+      if (action.toastId === undefined) {
+        return {
+          ...state,
+          toasts: [],
+        }
+      }
+      return {
+        ...state,
+        toasts: state.toasts.filter((t) => t.id !== action.toastId),
+      }
+  }
+}
+
+const listeners: Array<(state: State) => void> = []
+
+let memoryState: State = { toasts: [] }
+
+function dispatch(action: Action) {
+  memoryState = reducer(memoryState, action)
+  listeners.forEach((listener) => {
+    listener(memoryState)
+  })
+}
+
+type Toast = Omit<ToasterToast, 'id'>
+
+function toast({ ...props }: Toast) {
+  const id = genId()
+
+  const update = (props: ToasterToast) =>
+    dispatch({
+      type: 'UPDATE_TOAST',
+      toast: { ...props, id },
+    })
+  const dismiss = () => dispatch({ type: 'DISMISS_TOAST', toastId: id })
+
+  dispatch({
+    type: 'ADD_TOAST',
+    toast: {
+      ...props,
+      id,
+      open: true,
+      onOpenChange: (open) => {
+        if (!open) dismiss()
+      },
+    },
+  })
+
+  return {
+    id: id,
+    dismiss,
+    update,
+  }
+}
+
+function useToast() {
+  const [state, setState] = React.useState<State>(memoryState)
+
+  React.useEffect(() => {
+    listeners.push(setState)
+    return () => {
+      const index = listeners.indexOf(setState)
+      if (index > -1) {
+        listeners.splice(index, 1)
+      }
+    }
+  }, [state])
+
+  return {
+    ...state,
+    toast,
+    dismiss: (toastId?: string) => dispatch({ type: 'DISMISS_TOAST', toastId }),
+  }
+}
+
+export { useToast, toast }
+</file>
+
+<file path="hooks/use-mobile.ts">
+import * as React from 'react'
+
+const MOBILE_BREAKPOINT = 768
+
+export function useIsMobile() {
+  const [isMobile, setIsMobile] = React.useState<boolean | undefined>(undefined)
+
+  React.useEffect(() => {
+    const mql = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT - 1}px)`)
+    const onChange = () => {
+      setIsMobile(window.innerWidth < MOBILE_BREAKPOINT)
+    }
+    mql.addEventListener('change', onChange)
+    setIsMobile(window.innerWidth < MOBILE_BREAKPOINT)
+    return () => mql.removeEventListener('change', onChange)
+  }, [])
+
+  return !!isMobile
+}
+</file>
+
+<file path="hooks/use-toast.ts">
+'use client'
+
+// Inspired by react-hot-toast library
+import * as React from 'react'
+
+import type { ToastActionElement, ToastProps } from '@/components/ui/toast'
+
+const TOAST_LIMIT = 1
+const TOAST_REMOVE_DELAY = 1000000
+
+type ToasterToast = ToastProps & {
+  id: string
+  title?: React.ReactNode
+  description?: React.ReactNode
+  action?: ToastActionElement
+}
+
+const actionTypes = {
+  ADD_TOAST: 'ADD_TOAST',
+  UPDATE_TOAST: 'UPDATE_TOAST',
+  DISMISS_TOAST: 'DISMISS_TOAST',
+  REMOVE_TOAST: 'REMOVE_TOAST',
+} as const
+
+let count = 0
+
+function genId() {
+  count = (count + 1) % Number.MAX_SAFE_INTEGER
+  return count.toString()
+}
+
+type ActionType = typeof actionTypes
+
+type Action =
+  | {
+      type: ActionType['ADD_TOAST']
+      toast: ToasterToast
+    }
+  | {
+      type: ActionType['UPDATE_TOAST']
+      toast: Partial<ToasterToast>
+    }
+  | {
+      type: ActionType['DISMISS_TOAST']
+      toastId?: ToasterToast['id']
+    }
+  | {
+      type: ActionType['REMOVE_TOAST']
+      toastId?: ToasterToast['id']
+    }
+
+interface State {
+  toasts: ToasterToast[]
+}
+
+const toastTimeouts = new Map<string, ReturnType<typeof setTimeout>>()
+
+const addToRemoveQueue = (toastId: string) => {
+  if (toastTimeouts.has(toastId)) {
+    return
+  }
+
+  const timeout = setTimeout(() => {
+    toastTimeouts.delete(toastId)
+    dispatch({
+      type: 'REMOVE_TOAST',
+      toastId: toastId,
+    })
+  }, TOAST_REMOVE_DELAY)
+
+  toastTimeouts.set(toastId, timeout)
+}
+
+export const reducer = (state: State, action: Action): State => {
+  switch (action.type) {
+    case 'ADD_TOAST':
+      return {
+        ...state,
+        toasts: [action.toast, ...state.toasts].slice(0, TOAST_LIMIT),
+      }
+
+    case 'UPDATE_TOAST':
+      return {
+        ...state,
+        toasts: state.toasts.map((t) =>
+          t.id === action.toast.id ? { ...t, ...action.toast } : t,
+        ),
+      }
+
+    case 'DISMISS_TOAST': {
+      const { toastId } = action
+
+      // ! Side effects ! - This could be extracted into a dismissToast() action,
+      // but I'll keep it here for simplicity
+      if (toastId) {
+        addToRemoveQueue(toastId)
+      } else {
+        state.toasts.forEach((toast) => {
+          addToRemoveQueue(toast.id)
+        })
+      }
+
+      return {
+        ...state,
+        toasts: state.toasts.map((t) =>
+          t.id === toastId || toastId === undefined
+            ? {
+                ...t,
+                open: false,
+              }
+            : t,
+        ),
+      }
+    }
+    case 'REMOVE_TOAST':
+      if (action.toastId === undefined) {
+        return {
+          ...state,
+          toasts: [],
+        }
+      }
+      return {
+        ...state,
+        toasts: state.toasts.filter((t) => t.id !== action.toastId),
+      }
+  }
+}
+
+const listeners: Array<(state: State) => void> = []
+
+let memoryState: State = { toasts: [] }
+
+function dispatch(action: Action) {
+  memoryState = reducer(memoryState, action)
+  listeners.forEach((listener) => {
+    listener(memoryState)
+  })
+}
+
+type Toast = Omit<ToasterToast, 'id'>
+
+function toast({ ...props }: Toast) {
+  const id = genId()
+
+  const update = (props: ToasterToast) =>
+    dispatch({
+      type: 'UPDATE_TOAST',
+      toast: { ...props, id },
+    })
+  const dismiss = () => dispatch({ type: 'DISMISS_TOAST', toastId: id })
+
+  dispatch({
+    type: 'ADD_TOAST',
+    toast: {
+      ...props,
+      id,
+      open: true,
+      onOpenChange: (open) => {
+        if (!open) dismiss()
+      },
+    },
+  })
+
+  return {
+    id: id,
+    dismiss,
+    update,
+  }
+}
+
+function useToast() {
+  const [state, setState] = React.useState<State>(memoryState)
+
+  React.useEffect(() => {
+    listeners.push(setState)
+    return () => {
+      const index = listeners.indexOf(setState)
+      if (index > -1) {
+        listeners.splice(index, 1)
+      }
+    }
+  }, [state])
+
+  return {
+    ...state,
+    toast,
+    dismiss: (toastId?: string) => dispatch({ type: 'DISMISS_TOAST', toastId }),
+  }
+}
+
+export { useToast, toast }
+</file>
+
+<file path="lib/supabase/client.ts">
+import { createBrowserClient } from '@supabase/ssr'
+import { Database } from './types'
+
+let client: ReturnType<typeof createBrowserClient<Database>> | null = null
+
+export function getSupabaseBrowserClient() {
+  if (client) return client
+
+  client = createBrowserClient<Database>(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  )
+
+  return client
+}
+</file>
+
+<file path="lib/supabase/server.ts">
+import { createServerClient } from '@supabase/ssr'
+import { cookies } from 'next/headers'
+import { Database } from './types'
+
+export async function getSupabaseServerClient() {
+  const cookieStore = await cookies()
+
+  return createServerClient<Database>(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() {
+          return cookieStore.getAll()
+        },
+        setAll(cookiesToSet) {
+          try {
+            cookiesToSet.forEach(({ name, value, options }) =>
+              cookieStore.set(name, value, options)
+            )
+          } catch {
+            // Called from Server Component, can't set cookies
+          }
+        },
+      },
+    }
+  )
+}
+</file>
+
+<file path="lib/supabase/types.ts">
+export type Json =
+  | string
+  | number
+  | boolean
+  | null
+  | { [key: string]: Json | undefined }
+  | Json[]
+
+export type Database = {
+  public: {
+    Tables: {
+      books: {
+        Row: {
+          category_id: number
+          created_at: string | null
+          file_path: string
+          id: string
+          title: string
+        }
+        Insert: {
+          category_id: number
+          created_at?: string | null
+          file_path: string
+          id?: string
+          title: string
+        }
+        Update: {
+          category_id?: number
+          created_at?: string | null
+          file_path?: string
+          id?: string
+          title?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "books_category_id_fkey"
+            columns: ["category_id"]
+            isOneToOne: false
+            referencedRelation: "categories"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      categories: {
+        Row: {
+          code: string
+          created_at: string | null
+          id: number
+          name_ar: string
+        }
+        Insert: {
+          code: string
+          created_at?: string | null
+          id?: number
+          name_ar: string
+        }
+        Update: {
+          code?: string
+          created_at?: string | null
+          id?: number
+          name_ar?: string
+        }
+        Relationships: []
+      }
+      hadith_topics: {
+        Row: {
+          created_at: string | null
+          global_tid: number
+          topic_id: number
+        }
+        Insert: {
+          created_at?: string | null
+          global_tid: number
+          topic_id: number
+        }
+        Update: {
+          created_at?: string | null
+          global_tid?: number
+          topic_id?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "hadith_topics_global_tid_fkey"
+            columns: ["global_tid"]
+            isOneToOne: false
+            referencedRelation: "hadiths"
+            referencedColumns: ["global_tid"]
+          },
+          {
+            foreignKeyName: "hadith_topics_topic_id_fkey"
+            columns: ["topic_id"]
+            isOneToOne: false
+            referencedRelation: "topics"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      hadiths: {
+        Row: {
+          aya: number | null
+          book_id: string
+          created_at: string | null
+          global_tid: number | null
+          id: number
+          nass: string
+          page: string | null
+          part: string | null
+        }
+        Insert: {
+          aya?: number | null
+          book_id: string
+          created_at?: string | null
+          global_tid?: number | null
+          id: number
+          nass: string
+          page?: string | null
+          part?: string | null
+        }
+        Update: {
+          aya?: number | null
+          book_id?: string
+          created_at?: string | null
+          global_tid?: number | null
+          id?: number
+          nass?: string
+          page?: string | null
+          part?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "hadiths_book_id_fkey"
+            columns: ["book_id"]
+            isOneToOne: false
+            referencedRelation: "books"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      topics: {
+        Row: {
+          created_at: string | null
+          id: number
+          level: number
+          parent_id: number | null
+          title: string
+        }
+        Insert: {
+          created_at?: string | null
+          id: number
+          level: number
+          parent_id?: number | null
+          title: string
+        }
+        Update: {
+          created_at?: string | null
+          id?: number
+          level?: number
+          parent_id?: number | null
+          title?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "topics_parent_id_fkey"
+            columns: ["parent_id"]
+            isOneToOne: false
+            referencedRelation: "topics"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      [_ in never]: never
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
+  }
+}
+</file>
+
+<file path="lib/utils.ts">
+import { type ClassValue, clsx } from "clsx"
+import { twMerge } from "tailwind-merge"
+
+export function cn(...inputs: ClassValue[]) {
+  return twMerge(clsx(inputs))
+}
+</file>
+
+<file path="migrations/001_create_schema.sql">
+-- Migration: Create Ilmiyyah Hadith Database Schema
+-- Description: Creates tables for categories, books, topics, and hadiths with full referential integrity
+
+-- Enable UUID extension
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+-- Table 1: Categories (Book category directories)
+CREATE TABLE categories (
+    id SERIAL PRIMARY KEY,
+    code TEXT NOT NULL UNIQUE,
+    name_ar TEXT NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Table 2: Books (Individual hadith book metadata)
+CREATE TABLE books (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    category_id INTEGER NOT NULL REFERENCES categories(id) ON DELETE RESTRICT,
+    title TEXT NOT NULL,
+    file_path TEXT NOT NULL UNIQUE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Table 3: Topics (Hierarchical topic structure)
+CREATE TABLE topics (
+    id INTEGER PRIMARY KEY,
+    title TEXT NOT NULL,
+    level INTEGER NOT NULL,
+    parent_id INTEGER REFERENCES topics(id) ON DELETE CASCADE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Table 4: Hadiths (Core hadith content)
+CREATE TABLE hadiths (
+    id BIGINT PRIMARY KEY,
+    book_id UUID NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+    topic_id INTEGER REFERENCES topics(id) ON DELETE SET NULL,
+    nass TEXT NOT NULL,
+    part TEXT,
+    page TEXT,
+    aya INTEGER,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Create indexes for performance
+
+-- Foreign key indexes
+CREATE INDEX idx_books_category_id ON books(category_id);
+CREATE INDEX idx_topics_parent_id ON topics(parent_id);
+CREATE INDEX idx_hadiths_book_id ON hadiths(book_id);
+CREATE INDEX idx_hadiths_topic_id ON hadiths(topic_id);
+
+-- Composite index for pagination
+CREATE INDEX idx_hadiths_book_page ON hadiths(book_id, page);
+
+-- Page index for filtering
+CREATE INDEX idx_hadiths_page ON hadiths(page);
+
+-- Full-text search indexes using GIN with Arabic text search configuration
+-- Create Arabic text search configuration if not exists
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_ts_config WHERE cfgname = 'arabic') THEN
+        CREATE TEXT SEARCH CONFIGURATION arabic ( COPY = simple );
+    END IF;
+END
+$$;
+
+-- GIN indexes for full-text search on Arabic text
+CREATE INDEX idx_hadiths_nass_fts ON hadiths USING gin(to_tsvector('arabic', nass));
+CREATE INDEX idx_topics_title_fts ON topics USING gin(to_tsvector('arabic', title));
+CREATE INDEX idx_books_title_fts ON books USING gin(to_tsvector('arabic', title));
+CREATE INDEX idx_categories_name_fts ON categories USING gin(to_tsvector('arabic', name_ar));
+
+-- Comments for documentation
+COMMENT ON TABLE categories IS 'Book category directories from أقسام الكتب';
+COMMENT ON TABLE books IS 'Individual hadith book metadata';
+COMMENT ON TABLE topics IS 'Hierarchical topic structure from gtopics.json';
+COMMENT ON TABLE hadiths IS 'Core hadith content from book JSON files';
+
+COMMENT ON COLUMN hadiths.page IS 'Page number as TEXT to allow duplicates and special notations';
+COMMENT ON COLUMN topics.parent_id IS 'Self-referencing foreign key for topic hierarchy';
+COMMENT ON COLUMN hadiths.nass IS 'Main hadith text content in Arabic';
+</file>
+
+<file path="migrations/002_fix_hadiths_pk.sql">
+-- Migration: Fix Hadiths Primary Key
+-- Description: Changes hadiths table to use composite primary key (book_id, id) to prevent ID collisions across books
+-- This is critical since many books start their hadith IDs at 1, causing massive collisions
+
+-- Drop existing primary key constraint
+ALTER TABLE hadiths DROP CONSTRAINT hadiths_pkey;
+
+-- Add composite primary key
+ALTER TABLE hadiths ADD CONSTRAINT hadiths_pkey PRIMARY KEY (book_id, id);
+
+-- Add index on the composite key for better performance
+CREATE INDEX IF NOT EXISTS idx_hadiths_book_id_id ON hadiths(book_id, id);
+
+-- Add comment explaining the composite key
+COMMENT ON CONSTRAINT hadiths_pkey ON hadiths IS 'Composite primary key to prevent hadith ID collisions across different books';
+</file>
+
+<file path="migrations/003_pivot_hadith_topics.sql">
+-- Migration: Replace hadiths.topic_id with hadith_topics pivot table
+-- Rationale: JSON 'tid' is NOT topic id; topics are linked via topicid/*.txt files.
+-- We model a many-to-many between hadiths and topics.
+
+-- Drop FK and column from hadiths if present
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_name = 'hadiths' AND column_name = 'topic_id'
+    ) THEN
+        -- Drop FK constraint if exists
+        FOR r IN
+            SELECT conname
+            FROM pg_constraint
+            WHERE conrelid = 'hadiths'::regclass
+              AND contype = 'f'
+        LOOP
+            EXECUTE format('ALTER TABLE hadiths DROP CONSTRAINT %I', r.conname);
+        END LOOP;
+        ALTER TABLE hadiths DROP COLUMN topic_id;
+    END IF;
+END $$;
+
+-- Create pivot table
+CREATE TABLE IF NOT EXISTS hadith_topics (
+    book_id UUID NOT NULL,
+    hadith_id BIGINT NOT NULL,
+    topic_id INTEGER NOT NULL REFERENCES topics(id) ON DELETE CASCADE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    PRIMARY KEY (book_id, hadith_id, topic_id),
+    FOREIGN KEY (book_id, hadith_id) REFERENCES hadiths(book_id, id) ON DELETE CASCADE
+);
+
+-- Useful indexes
+CREATE INDEX IF NOT EXISTS idx_hadith_topics_topic_id ON hadith_topics(topic_id);
+CREATE INDEX IF NOT EXISTS idx_hadith_topics_book_hadith ON hadith_topics(book_id, hadith_id);
+</file>
+
+<file path="migrations/004_tid_schema.sql">
+-- Migration: Add global_tid to hadiths and pivot on global_tid
+-- Rationale: 'tid' is a global, corpus-wide identifier per hadith row/page.
+-- We store it as hadiths.global_tid and pivot topics via this key.
+
+BEGIN;
+
+-- 1) Add global_tid column (unique) to hadiths
+ALTER TABLE hadiths
+ADD COLUMN IF NOT EXISTS global_tid BIGINT;
+
+-- Enforce uniqueness when populated
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_indexes WHERE schemaname = 'public' AND indexname = 'uq_hadiths_global_tid'
+  ) THEN
+    EXECUTE 'CREATE UNIQUE INDEX uq_hadiths_global_tid ON hadiths(global_tid)';
+  END IF;
+END $$;
+
+-- 2) Recreate hadith_topics to reference hadiths.global_tid (not (book_id,id))
+DROP TABLE IF EXISTS hadith_topics;
+
+CREATE TABLE hadith_topics (
+  global_tid BIGINT NOT NULL REFERENCES hadiths(global_tid) ON DELETE CASCADE,
+  topic_id INTEGER NOT NULL REFERENCES topics(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  PRIMARY KEY (global_tid, topic_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_hadith_topics_topic_id ON hadith_topics(topic_id);
+CREATE INDEX IF NOT EXISTS idx_hadith_topics_global_tid ON hadith_topics(global_tid);
+
+COMMIT;
+</file>
+
+<file path="next.config.mjs">
+/** @type {import('next').NextConfig} */
+const nextConfig = {
+  typescript: {
+    ignoreBuildErrors: true,
+  },
+  images: {
+    unoptimized: true,
+  },
+}
+
+export default nextConfig
+</file>
+
+<file path="package.json">
+{
+  "name": "ilmiyya-library",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "next build",
+    "dev": "next dev",
+    "lint": "eslint .",
+    "seed": "node scripts/seed.js",
+    "start": "next start"
+  },
+  "dependencies": {
+    "@hookform/resolvers": "^3.10.0",
+    "@radix-ui/react-accordion": "1.2.2",
+    "@radix-ui/react-alert-dialog": "1.1.4",
+    "@radix-ui/react-aspect-ratio": "1.1.1",
+    "@radix-ui/react-avatar": "1.1.2",
+    "@radix-ui/react-checkbox": "1.1.3",
+    "@radix-ui/react-collapsible": "1.1.2",
+    "@radix-ui/react-context-menu": "2.2.4",
+    "@radix-ui/react-dialog": "1.1.4",
+    "@radix-ui/react-dropdown-menu": "2.1.4",
+    "@radix-ui/react-hover-card": "1.1.4",
+    "@radix-ui/react-label": "2.1.1",
+    "@radix-ui/react-menubar": "1.1.4",
+    "@radix-ui/react-navigation-menu": "1.2.3",
+    "@radix-ui/react-popover": "1.1.4",
+    "@radix-ui/react-progress": "1.1.1",
+    "@radix-ui/react-radio-group": "1.2.2",
+    "@radix-ui/react-scroll-area": "1.2.2",
+    "@radix-ui/react-select": "2.1.4",
+    "@radix-ui/react-separator": "1.1.1",
+    "@radix-ui/react-slider": "1.2.2",
+    "@radix-ui/react-slot": "1.1.1",
+    "@radix-ui/react-switch": "1.1.2",
+    "@radix-ui/react-tabs": "1.1.2",
+    "@radix-ui/react-toast": "1.2.4",
+    "@radix-ui/react-toggle": "1.1.1",
+    "@radix-ui/react-toggle-group": "1.1.1",
+    "@radix-ui/react-tooltip": "1.1.6",
+    "@supabase/ssr": "latest",
+    "@supabase/supabase-js": "latest",
+    "@vercel/analytics": "latest",
+    "autoprefixer": "^10.4.20",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "cmdk": "1.0.4",
+    "date-fns": "4.1.0",
+    "embla-carousel-react": "8.5.1",
+    "framer-motion": "12.23.24",
+    "fs": "0.0.1-security",
+    "input-otp": "1.4.1",
+    "lucide-react": "^0.454.0",
+    "next": "16.0.0",
+    "next-themes": "latest",
+    "path": "0.12.7",
+    "react": "19.2.0",
+    "react-day-picker": "9.8.0",
+    "react-dom": "19.2.0",
+    "react-hook-form": "^7.60.0",
+    "react-resizable-panels": "latest",
+    "recharts": "2.15.4",
+    "sonner": "^1.7.4",
+    "tailwind-merge": "^2.5.5",
+    "tailwindcss-animate": "^1.0.7",
+    "vaul": "^0.9.9",
+    "zod": "3.25.76"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.1.9",
+    "@types/node": "^22",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "postcss": "^8.5",
+    "tailwindcss": "^4.1.9",
+    "tw-animate-css": "1.3.3",
+    "typescript": "^5"
+  }
+}
+</file>
+
+<file path="postcss.config.mjs">
+/** @type {import('postcss-load-config').Config} */
+const config = {
+  plugins: {
+    '@tailwindcss/postcss': {},
+  },
+}
+
+export default config
+</file>
+
+<file path="README.md">
+# المكتبة العلمية - Ilmiyya Digital Library
+
+A premium Arabic Islamic digital library app with full-text search, hierarchical topic browsing, and an elegant book reader interface.
+
+## Features
+
+### 🎨 4 Premium Themes
+- **Sepia (رق البردي)** - Default warm parchment theme for comfortable reading
+- **Light (مضيء)** - Crisp white theme with cool undertones
+- **Midnight (منتصف الليل)** - Blue-dark theme optimized for night reading
+- **Forest (غابة)** - Green-dark theme with natural, calming tones
+
+All themes transition smoothly (0.3s) and persist via localStorage.
+
+### 📖 Book Reader
+- Split-view layout with TOC sidebar (right side on desktop)
+- Navigate by Parts (أجزاء) and Pages (صفحات)
+- Paginated content with smooth prev/next navigation
+- Mobile: Drawer-based TOC accessible via button
+- Desktop: Persistent sidebar with tree navigation
+
+### 🗂️ Topics Browser
+- Hierarchical tree structure with expandable/collapsible nodes (7,000+ topics)
+- All 5 root categories loaded: العقيدة, الآداب الشرعية, السير والمناقب, التفسير, الفقه
+- **Navigation flow**: 
+  - Non-leaf nodes: expand/collapse to show children
+  - Leaf nodes: click redirects to dedicated page with hadiths
+- **Breadcrumb navigation**: Full parent chain shown at top (الرئيسية > category > subcategory > ...)
+- **Mobile (<768px)**: Native vertical list tree navigation
+- **Desktop (≥768px)**: Split-view with persistent sidebar + empty state
+- Progressive loading: root topics load instantly (<1s), children load on-demand
+- Background batch loading for remaining topics (non-blocking)
+
+### 🔍 Full-Text Search
+- Search across hadiths, books, and topics
+- Arabic-optimized FTS using PostgreSQL `websearch`
+- Filter by content type (All/Hadiths/Books/Topics)
+- Instant results with pagination
+
+### 📱 Responsive Design
+- **Mobile (<768px)**: 
+  - Fixed bottom tab navigation (Home, Books, Topics, Search)
+  - Topics: Native vertical list (tree + content inline, no sidebar)
+  - Book Reader: Drawer-based TOC
+  - Card-based tree nodes with proper spacing and borders
+- **Desktop (≥768px)**: 
+  - Persistent header with theme switcher
+  - Topics: Split-view sidebar + content
+  - Book Reader: Persistent sidebar on right
+- RTL layout throughout (`dir="rtl"`)
+- Safe area inset support for mobile browsers
+
+## Typography
+
+- **Amiri** (serif) - Arabic content with line-height 1.8 for optimal readability
+- **Tajawal** (sans-serif) - UI elements and navigation
+
+## Tech Stack
+
+- **Next.js 16** (App Router)
+- **Supabase** - PostgreSQL database with real-time subscriptions
+- **TypeScript** - Type-safe queries with generated types
+- **Tailwind CSS v4** - Utility-first styling with custom themes
+- **Radix UI** - Accessible primitives (Sheet, Dialog, Dropdown, etc.)
+- **Lucide React** - Beautiful icons
+
+## Database Schema
+
+### Tables
+- `categories` - Book categories (أقسام الكتب)
+- `books` - Book metadata with category relationships
+- `hadiths` - Core hadith content with FTS indexes
+- `topics` - Hierarchical topic structure (self-referencing)
+- `hadith_topics` - Many-to-many pivot table
+
+### Indexes
+- Full-text search indexes on `books.title`, `hadiths.nass`, `topics.title` (Arabic config)
+- B-tree indexes on foreign keys and commonly filtered columns
+
+## Getting Started
+
+1. Install dependencies:
+```bash
+pnpm install
+```
+
+2. Environment variables are already configured in `.env.local`:
+```
+NEXT_PUBLIC_SUPABASE_URL=https://ycmylngpaxkuksbgapfl.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+```
+
+3. Run the development server:
+```bash
+pnpm dev
+```
+
+4. Open [http://localhost:3000](http://localhost:3000)
+
+## Project Structure
+
+```
+app/
+├── page.tsx              # Landing hero with 3 CTAs
+├── layout.tsx            # RTL root layout with fonts
+├── globals.css           # Theme system with 4 data-theme variants
+├── books/
+│   ├── page.tsx         # Books grid with category filter
+│   └── [id]/page.tsx    # Book reader with TOC sidebar
+├── topics/
+│   ├── page.tsx         # Hierarchical topics tree (navigation only)
+│   └── [id]/page.tsx    # Topic detail page with breadcrumb + hadiths
+└── search/page.tsx      # Full-text search across all content
+
+components/
+├── Header.tsx           # Desktop header with nav links
+├── BottomNav.tsx        # Mobile bottom tab navigation
+├── ThemeSwitcher.tsx    # 4-option theme dropdown
+├── BookCard.tsx         # Reusable book card component
+├── Tree.tsx             # Expandable/collapsible tree with selection
+├── Pagination.tsx       # Pagination controls with RTL support
+└── ui/                  # Radix UI primitives (shadcn/ui style)
+
+lib/
+└── supabase/
+    ├── client.ts        # Browser client singleton
+    ├── server.ts        # Server client with cookie support
+    └── types.ts         # Generated TypeScript types
+```
+
+## Design Principles
+
+- **RTL-First**: All layouts and interactions optimized for Arabic
+- **Generous Spacing**: 0.75rem border radius, ample padding/gaps
+- **Card-Based Layouts**: Subtle hover states, smooth transitions
+- **Accessibility**: Semantic HTML, keyboard navigation, WCAG AAA contrast
+- **Performance**: Paginated queries, lazy loading, optimized FTS
+
+## Data Fetching Patterns
+
+All queries use the Supabase browser client with type-safe operations:
+
+```typescript
+// Books with category join
+const { data } = await supabase
+  .from('books')
+  .select('*, categories(name_ar)')
+  .order('title')
+  .range(from, to)
+
+// Full-text search on hadiths
+const { data } = await supabase
+  .from('hadiths')
+  .select('*, books(title)')
+  .textSearch('nass', query, { config: 'arabic', type: 'websearch' })
+  .range(from, to)
+
+// Hierarchical topics - batch loading for large datasets
+// Supabase has a default 1000-row limit per query
+let allTopics = []
+let from = 0
+const batchSize = 1000
+
+while (true) {
+  const { data } = await supabase
+    .from('topics')
+    .select('*')
+    .order('id')
+    .range(from, from + batchSize - 1)
+  
+  if (!data || data.length === 0) break
+  allTopics = [...allTopics, ...data]
+  if (data.length < batchSize) break
+  from += batchSize
+}
+```
+
+### Handling Supabase Limits
+- **Default row limit**: 1,000 rows per query
+- **Solution**: Use `.range(from, to)` with batch loading for large datasets
+- **Pro subscription**: No additional configuration needed, limits are already optimal for this app
+
+## License
+
+MIT
+</file>
+
+<file path="styles/globals.css">
+@import 'tailwindcss';
+@import 'tw-animate-css';
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+  --primary: oklch(0.205 0 0);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.97 0 0);
+  --secondary-foreground: oklch(0.205 0 0);
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.556 0 0);
+  --accent: oklch(0.97 0 0);
+  --accent-foreground: oklch(0.205 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
+  --destructive-foreground: oklch(0.577 0.245 27.325);
+  --border: oklch(0.922 0 0);
+  --input: oklch(0.922 0 0);
+  --ring: oklch(0.708 0 0);
+  --chart-1: oklch(0.646 0.222 41.116);
+  --chart-2: oklch(0.6 0.118 184.704);
+  --chart-3: oklch(0.398 0.07 227.392);
+  --chart-4: oklch(0.828 0.189 84.429);
+  --chart-5: oklch(0.769 0.188 70.08);
+  --radius: 0.625rem;
+  --sidebar: oklch(0.985 0 0);
+  --sidebar-foreground: oklch(0.145 0 0);
+  --sidebar-primary: oklch(0.205 0 0);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.97 0 0);
+  --sidebar-accent-foreground: oklch(0.205 0 0);
+  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-ring: oklch(0.708 0 0);
+}
+
+.dark {
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.145 0 0);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.145 0 0);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.985 0 0);
+  --primary-foreground: oklch(0.205 0 0);
+  --secondary: oklch(0.269 0 0);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --accent: oklch(0.269 0 0);
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.396 0.141 25.723);
+  --destructive-foreground: oklch(0.637 0.237 25.331);
+  --border: oklch(0.269 0 0);
+  --input: oklch(0.269 0 0);
+  --ring: oklch(0.439 0 0);
+  --chart-1: oklch(0.488 0.243 264.376);
+  --chart-2: oklch(0.696 0.17 162.48);
+  --chart-3: oklch(0.769 0.188 70.08);
+  --chart-4: oklch(0.627 0.265 303.9);
+  --chart-5: oklch(0.645 0.246 16.439);
+  --sidebar: oklch(0.205 0 0);
+  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar-primary: oklch(0.488 0.243 264.376);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.269 0 0);
+  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-border: oklch(0.269 0 0);
+  --sidebar-ring: oklch(0.439 0 0);
+}
+
+@theme inline {
+  --font-sans: 'Geist', 'Geist Fallback';
+  --font-mono: 'Geist Mono', 'Geist Mono Fallback';
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+</file>
+
+<file path="supabase/.temp/cli-latest">
+v2.58.5
+</file>
+
+<file path="supabase/.temp/gotrue-version">
+v2.182.1
+</file>
+
+<file path="supabase/.temp/pooler-url">
+postgresql://postgres.ycmylngpaxkuksbgapfl@aws-1-ap-southeast-2.pooler.supabase.com:5432/postgres
+</file>
+
+<file path="supabase/.temp/postgres-version">
+17.6.1.038
+</file>
+
+<file path="supabase/.temp/project-ref">
+ycmylngpaxkuksbgapfl
+</file>
+
+<file path="supabase/.temp/rest-version">
+v13.0.5
+</file>
+
+<file path="supabase/.temp/storage-migration">
+fix-object-level
+</file>
+
+<file path="supabase/.temp/storage-version">
+v1.28.4
+</file>
+
+<file path="tsconfig.json">
+{
+  "compilerOptions": {
+    "lib": [
+      "dom",
+      "dom.iterable",
+      "esnext"
+    ],
+    "allowJs": true,
+    "target": "ES6",
+    "skipLibCheck": true,
+    "strict": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "jsx": "react-jsx",
+    "incremental": true,
+    "plugins": [
+      {
+        "name": "next"
+      }
+    ],
+    "paths": {
+      "@/*": [
+        "./*"
+      ]
+    }
+  },
+  "include": [
+    "next-env.d.ts",
+    "**/*.ts",
+    "**/*.tsx",
+    ".next/types/**/*.ts",
+    ".next\\dev/types/**/*.ts",
+    ".next\\dev/types/**/*.ts",
+    ".next/dev/types/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules"
+  ]
+}
+</file>
+
+</files>
