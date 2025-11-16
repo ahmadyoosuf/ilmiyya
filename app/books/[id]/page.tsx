@@ -263,7 +263,7 @@ export default function BookReaderPage({ params }: { params: Promise<{ id: strin
         </div>
 
         {/* Content Area */}
-        <div className="flex-1 overflow-y-auto p-4 md:p-8">
+        <div className="flex-1 overflow-y-auto p-4 md:p-8 pb-24 md:pb-8">
           {isLoading ? (
             <div className="space-y-4">
               {Array.from({ length: 3 }).map((_, i) => (
@@ -279,11 +279,7 @@ export default function BookReaderPage({ params }: { params: Promise<{ id: strin
           ) : (
             <div className="max-w-4xl mx-auto space-y-6">
               {hadiths.map((hadith) => (
-                <div key={hadith.id} className="card p-6 space-y-3">
-                  <div className="flex gap-4 text-sm text-muted-foreground font-arabic-sans">
-                    {hadith.part && <span>الجزء: {hadith.part}</span>}
-                    {hadith.page && <span>الصفحة: {hadith.page}</span>}
-                  </div>
+                <div key={hadith.id} className="card p-6">
                   <p className="text-lg leading-loose">{hadith.nass}</p>
                 </div>
               ))}
@@ -291,9 +287,9 @@ export default function BookReaderPage({ params }: { params: Promise<{ id: strin
           )}
         </div>
 
-        {/* Pagination Controls */}
+        {/* Pagination Controls - Fixed to bottom on mobile, inline on desktop */}
         {totalPages > 1 && (
-          <div className="border-t border-border bg-card p-4 flex items-center justify-between">
+          <div className="border-t border-border bg-card p-4 flex items-center justify-between md:relative fixed bottom-0 left-0 right-0 z-10 md:z-auto">
             <button
               onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
               disabled={currentPage === 1}

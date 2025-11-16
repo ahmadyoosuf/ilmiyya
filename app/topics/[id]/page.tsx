@@ -7,6 +7,7 @@ import { Database } from '@/lib/supabase/types'
 import { Pagination } from '@/components/Pagination'
 import { ChevronLeft } from 'lucide-react'
 import Link from 'next/link'
+import { cn } from '@/lib/utils'
 
 type Topic = Database['public']['Tables']['topics']['Row']
 
@@ -15,6 +16,8 @@ interface HadithWithBook {
   global_tid: number | null
   nass: string
   book_id: string
+  part: string | null
+  page: string | null
   books: { title: string } | null
 }
 
@@ -152,7 +155,7 @@ export default function TopicDetailPage({ params }: { params: Promise<{ id: stri
 
       const { data } = await supabase
         .from('hadith_topics')
-        .select('hadiths!inner(id, global_tid, nass, book_id, books(title))')
+        .select('hadiths!inner(id, global_tid, nass, book_id, part, page, books(title))')
         .eq('topic_id', topicId)
         .range(from, to)
       
@@ -233,31 +236,108 @@ export default function TopicDetailPage({ params }: { params: Promise<{ id: stri
           </div>
         ) : (
           <>
-            <div className="space-y-6">
+            {/* Premium Desktop Table */}
+            <div className="hidden md:block card overflow-hidden shadow-sm">
+              <div className="overflow-x-auto">
+                <table className="w-full border-collapse">
+                  <thead>
+                    <tr className="bg-gradient-to-l from-muted/30 to-muted/50 border-b-2 border-border">
+                      <th className="px-6 py-4 text-right text-sm font-bold font-arabic-sans text-foreground whitespace-nowrap">اسم الكتاب</th>
+                      <th className="px-6 py-4 text-right text-sm font-bold font-arabic-sans text-foreground whitespace-nowrap">العنوان</th>
+                      <th className="px-6 py-4 text-right text-sm font-bold font-arabic-sans text-foreground whitespace-nowrap w-24">الجزء</th>
+                      <th className="px-6 py-4 text-right text-sm font-bold font-arabic-sans text-foreground whitespace-nowrap w-24">الصفحة</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {hadiths.map((hadith, index) => {
+                      const bookLink = hadith.global_tid
+                        ? `/books/${hadith.book_id}?tid=${hadith.global_tid}&from=topics&topicId=${topicId}&p=${currentPage}`
+                        : null
+                      
+                      return (
+                        <tr 
+                          key={hadith.id}
+                          className={cn(
+                            'border-b border-border/50 last:border-b-0 transition-all duration-200',
+                            bookLink 
+                              ? 'hover:bg-accent/5 hover:shadow-sm cursor-pointer group' 
+                              : 'opacity-50 cursor-not-allowed'
+                          )}
+                          onClick={() => bookLink && (window.location.href = bookLink)}
+                        >
+                          <td className="px-6 py-4 align-middle">
+                            <div className={cn(
+                              "text-sm font-semibold font-arabic-sans transition-colors",
+                              bookLink && "group-hover:text-accent"
+                            )}>
+                              {hadith.books?.title || 'غير معروف'}
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 align-middle">
+                            <div className="text-sm font-arabic-sans text-muted-foreground line-clamp-2 leading-relaxed">
+                              {topic.title}
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 align-middle text-center">
+                            <span className="inline-flex items-center justify-center px-3 py-1 rounded-full bg-muted/50 text-xs font-medium font-arabic-sans">
+                              {hadith.part || '-'}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 align-middle text-center">
+                            <span className="inline-flex items-center justify-center px-3 py-1 rounded-full bg-muted/50 text-xs font-medium font-arabic-sans">
+                              {hadith.page || '-'}
+                            </span>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Premium Mobile Card View */}
+            <div className="md:hidden space-y-3">
               {hadiths.map((hadith) => {
                 const bookLink = hadith.global_tid
                   ? `/books/${hadith.book_id}?tid=${hadith.global_tid}&from=topics&topicId=${topicId}&p=${currentPage}`
                   : null
-
-                const previewText = truncateText(hadith.nass, 2)
                 
                 return (
                   <Link
                     key={hadith.id}
                     href={bookLink || '#'}
-                    className={`card p-6 space-y-3 animate-entrance transition-all ${
+                    className={cn(
+                      'card p-4 space-y-3 animate-entrance transition-all block shadow-sm',
                       bookLink
-                        ? 'hover:bg-muted hover:shadow-lg cursor-pointer'
-                        : 'opacity-50 cursor-default'
-                    }`}
+                        ? 'hover:bg-muted/50 hover:shadow-md cursor-pointer active:scale-[0.98]'
+                        : 'opacity-50 cursor-not-allowed'
+                    )}
                   >
-                    <div className="flex gap-4 text-sm text-muted-foreground font-arabic-sans">
-                      {hadith.books && (
-                        <span className="font-bold">الكتاب: {hadith.books.title}</span>
-                      )}
-                      <span className="mr-auto">#{hadith.id}</span>
+                    <div className="grid grid-cols-2 gap-3 text-sm font-arabic-sans">
+                      <div className="space-y-1">
+                        <div className="text-xs text-muted-foreground font-medium">اسم الكتاب</div>
+                        <div className="font-bold text-foreground">{hadith.books?.title || 'غير معروف'}</div>
+                      </div>
+                      <div className="space-y-1">
+                        <div className="text-xs text-muted-foreground font-medium">العنوان</div>
+                        <div className="font-semibold text-foreground line-clamp-2">{topic.title}</div>
+                      </div>
                     </div>
-                    <p className="text-lg leading-loose line-clamp-4">{previewText}</p>
+                    <div className="flex items-center gap-4 pt-2 border-t border-border/50">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-muted-foreground font-medium">الجزء:</span>
+                        <span className="inline-flex items-center justify-center px-2.5 py-1 rounded-full bg-muted text-xs font-semibold font-arabic-sans">
+                          {hadith.part || '-'}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-muted-foreground font-medium">الصفحة:</span>
+                        <span className="inline-flex items-center justify-center px-2.5 py-1 rounded-full bg-muted text-xs font-semibold font-arabic-sans">
+                          {hadith.page || '-'}
+                        </span>
+                      </div>
+                    </div>
                   </Link>
                 )
               })}

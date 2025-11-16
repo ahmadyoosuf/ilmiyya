@@ -78,7 +78,8 @@ const TreeItem = memo(({
           'active:scale-[0.98] touch-manipulation',
           'bg-card border border-border shadow-sm',
           isSelected && 'bg-accent text-accent-foreground border-accent shadow-md scale-[1.02]',
-          !isSelected && 'hover:bg-muted/50 active:bg-muted'
+          !isSelected && 'hover:bg-muted/50 active:bg-muted',
+          hasChildren ? 'cursor-default' : 'cursor-pointer'
         )}
         style={{ 
           marginRight: `${level * 1.2}rem`,

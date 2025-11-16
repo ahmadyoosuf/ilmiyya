@@ -52,7 +52,8 @@ const TreeItem = memo(({
           'w-full flex items-center gap-2 py-2.5 px-3 rounded-lg text-right transition-all duration-200',
           'hover:bg-muted/60',
           isSelected && 'bg-accent/10 text-accent font-semibold',
-          !hasChildren && 'pr-9'
+          !hasChildren && 'pr-9',
+          hasChildren ? 'cursor-default' : 'cursor-pointer'
         )}
         style={{ paddingRight: hasChildren ? `${level * 1.5 + 0.75}rem` : `${level * 1.5 + 2.75}rem` }}
       >
