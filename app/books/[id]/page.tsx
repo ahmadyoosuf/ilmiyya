@@ -1,6 +1,6 @@
 'use client'
 
-import { use, useEffect, useState } from 'react'
+import { use, useEffect, useState, useMemo, useCallback } from 'react'
 import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { getSupabaseBrowserClient } from '@/lib/supabase/client'
@@ -39,21 +39,33 @@ export default function BookReaderPage({ params }: { params: Promise<{ id: strin
   const [selectedPage, setSelectedPage] = useState<string | null>(null)
   const [selectedTopicId, setSelectedTopicId] = useState<number | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const [isTocLoading, setIsTocLoading] = useState(true) // Separate loading state for TOC
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
   const [backLink, setBackLink] = useState<string | null>(null)
 
   const supabase = getSupabaseBrowserClient()
 
-  // Handle deep-linking by global_tid
+  // Handle deep-linking by global_tid and back navigation
   useEffect(() => {
     async function handleDeepLink() {
       const tid = searchParams.get('tid')
       const fromTopics = searchParams.get('from') === 'topics'
+      const fromSearch = searchParams.get('from') === 'search'
       const topicId = searchParams.get('topicId')
       const topicPage = searchParams.get('p')
+      const searchQuery = searchParams.get('q')
+      const searchType = searchParams.get('type')
+      const searchPage = searchParams.get('sp')
 
-      if (tid && fromTopics && topicId) {
-        // Build back link
+      // Build back link based on source
+      if (fromSearch && searchQuery) {
+        // Coming from search results
+        let backPath = `/search?q=${encodeURIComponent(searchQuery)}`
+        if (searchType) backPath += `&type=${searchType}`
+        if (searchPage) backPath += `&sp=${searchPage}`
+        setBackLink(backPath)
+      } else if (tid && fromTopics && topicId) {
+        // Coming from topics
         const backPath = topicPage
           ? `/topics/${topicId}?p=${topicPage}`
           : `/topics/${topicId}`
@@ -102,6 +114,8 @@ export default function BookReaderPage({ params }: { params: Promise<{ id: strin
   // Fetch book info and build TOC
   useEffect(() => {
     async function fetchBook() {
+      setIsTocLoading(true)
+      
       const { data: bookData } = await supabase
         .from('books')
         .select('*')
@@ -113,21 +127,41 @@ export default function BookReaderPage({ params }: { params: Promise<{ id: strin
         
         // Build TOC from book's toc column (stored from JSON file)
         if (bookData.toc && Array.isArray(bookData.toc)) {
+          // Fast path: TOC is already in database, build immediately
           buildBookTOC(bookData.toc as unknown as BookTOCEntry[])
+          setIsTocLoading(false)
         } else {
-          // Fallback to Part/Page TOC if no toc data
-          const { data: hadithsData } = await supabase
-            .from('hadiths')
-            .select('part, page')
-            .eq('book_id', id)
-            .order('id')
-          
-          if (hadithsData) {
-            buildTOC(hadithsData)
-          }
+          // Slow path: No TOC in database, build from hadiths
+          // Load part/page structure in background (distinct values only)
+          fetchPartPageStructure()
         }
+      } else {
+        setIsTocLoading(false)
       }
     }
+    
+    async function fetchPartPageStructure() {
+      // Use limited query to get unique part/page combinations efficiently
+      const { data: hadithsData } = await supabase
+        .from('hadiths')
+        .select('part, page')
+        .eq('book_id', id)
+        .order('part, page')
+        .limit(1000) // Limit to first 1000 to avoid huge queries
+      
+      if (hadithsData && hadithsData.length > 0) {
+        buildTOC(hadithsData)
+      } else {
+        // No data, show empty state
+        setTocTree([{
+          id: 'empty',
+          label: 'لا يوجد فهرس',
+          data: { type: 'empty' }
+        }])
+      }
+      setIsTocLoading(false)
+    }
+    
     fetchBook()
   }, [id])
 
@@ -234,6 +268,7 @@ export default function BookReaderPage({ params }: { params: Promise<{ id: strin
   function buildTOC(hadiths: Array<{ part: string | null; page: string | null }>) {
     const structure: TOCStructure = { parts: new Map() }
     
+    // Build structure from distinct part/page combinations
     hadiths.forEach((h) => {
       const part = h.part || 'بدون جزء'
       const page = h.page || 'بدون صفحة'
@@ -244,6 +279,7 @@ export default function BookReaderPage({ params }: { params: Promise<{ id: strin
       structure.parts.get(part)!.add(page)
     })
 
+    // Convert to tree (only show if there are meaningful parts/pages)
     const tree: TreeNode[] = Array.from(structure.parts.entries()).map(([part, pages], idx) => ({
       id: `part-${idx}`,
       label: part,
@@ -313,7 +349,13 @@ export default function BookReaderPage({ params }: { params: Promise<{ id: strin
         )}
       </div>
       <div className="flex-1 overflow-y-auto p-4">
-        <Tree nodes={tocTree} selectedId={selectedTopicId || (selectedPage ? undefined : selectedPart || undefined)} onSelect={handleTOCSelect} />
+        {isTocLoading ? (
+          <div className="flex items-center justify-center h-32">
+            <div className="text-muted-foreground font-arabic-sans">جارٍ تحميل الفهرس...</div>
+          </div>
+        ) : (
+          <Tree nodes={tocTree} selectedId={selectedTopicId || (selectedPage ? undefined : selectedPart || undefined)} onSelect={handleTOCSelect} />
+        )}
       </div>
     </div>
   )
@@ -322,7 +364,7 @@ export default function BookReaderPage({ params }: { params: Promise<{ id: strin
     <div className="h-screen flex flex-col md:flex-row overflow-hidden">
       {/* Main Content */}
       <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Back Bar for Topics Navigation */}
+        {/* Back Bar for Navigation */}
         {backLink && (
           <div className="border-b border-border bg-muted/50 px-4 py-2 flex items-center gap-2">
             <Link
@@ -330,7 +372,7 @@ export default function BookReaderPage({ params }: { params: Promise<{ id: strin
               className="inline-flex items-center gap-2 text-accent hover:text-accent/80 transition-colors text-sm font-arabic-sans"
             >
               <ChevronRight className="w-4 h-4" />
-              رجوع إلى الموضوع
+              {backLink.includes('/search') ? 'رجوع إلى نتائج البحث' : 'رجوع إلى الموضوع'}
             </Link>
             <button
               onClick={() => setBackLink(null)}

@@ -93,8 +93,24 @@ export default function TopicDetailPage({ params }: { params: Promise<{ id: stri
   const [currentPage, setCurrentPage] = useState(initialPage)
   const [totalPages, setTotalPages] = useState(1)
   const [isLoading, setIsLoading] = useState(true)
+  const [backLink, setBackLink] = useState<string | null>(null)
 
   const supabase = getSupabaseBrowserClient()
+
+  // Check for back navigation from search
+  useEffect(() => {
+    const fromSearch = searchParams.get('from') === 'search'
+    const searchQuery = searchParams.get('q')
+    const searchType = searchParams.get('type')
+    const searchPage = searchParams.get('sp')
+
+    if (fromSearch && searchQuery) {
+      let backPath = `/search?q=${encodeURIComponent(searchQuery)}`
+      if (searchType) backPath += `&type=${searchType}`
+      if (searchPage) backPath += `&sp=${searchPage}`
+      setBackLink(backPath)
+    }
+  }, [searchParams])
 
   // Fetch topic and build breadcrumb trail
   useEffect(() => {
@@ -185,6 +201,19 @@ export default function TopicDetailPage({ params }: { params: Promise<{ id: stri
   return (
     <div className="min-h-screen">
       <div className="container mx-auto px-4 py-6 max-w-5xl">
+        {/* Back to Search Link */}
+        {backLink && (
+          <div className="mb-4 p-3 bg-muted/50 rounded-lg border border-border">
+            <Link 
+              href={backLink}
+              className="inline-flex items-center gap-2 text-accent hover:text-accent/80 transition-colors font-arabic-sans"
+            >
+              <ChevronLeft className="w-4 h-4" />
+              رجوع إلى نتائج البحث
+            </Link>
+          </div>
+        )}
+
         {/* Breadcrumb Navigation */}
         <div className="mb-6">
           <Link 

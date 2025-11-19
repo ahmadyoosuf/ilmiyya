@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Suspense } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { getSupabaseBrowserClient } from '@/lib/supabase/client'
 import { Database } from '@/lib/supabase/types'
 import { Pagination } from '@/components/Pagination'
@@ -20,7 +21,10 @@ type SearchType = 'all' | 'hadiths' | 'books' | 'topics'
 
 const ITEMS_PER_PAGE = 10
 
-export default function SearchPage() {
+function SearchContent() {
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  
   const [query, setQuery] = useState('')
   const [searchType, setSearchType] = useState<SearchType>('all')
   const [hadiths, setHadiths] = useState<Hadith[]>([])
@@ -32,6 +36,31 @@ export default function SearchPage() {
   const [hasSearched, setHasSearched] = useState(false)
 
   const supabase = getSupabaseBrowserClient()
+
+  // Load search state from URL params
+  useEffect(() => {
+    const urlQuery = searchParams.get('q')
+    const urlType = searchParams.get('type') as SearchType
+    const urlPage = searchParams.get('sp')
+
+    if (urlQuery) {
+      setQuery(urlQuery)
+      setHasSearched(true)
+      if (urlType && ['all', 'hadiths', 'books', 'topics'].includes(urlType)) {
+        setSearchType(urlType)
+      }
+      if (urlPage) {
+        setCurrentPage(parseInt(urlPage))
+      }
+    }
+  }, [])
+
+  // Perform search when URL params are loaded
+  useEffect(() => {
+    if (hasSearched && query.trim()) {
+      performSearch()
+    }
+  }, [hasSearched])
 
   useEffect(() => {
     if (query.trim()) {
@@ -59,7 +88,7 @@ export default function SearchPage() {
         .range(from, to)
       
       if (hadithsData) {
-        setHadiths(hadithsData)
+        setHadiths(hadithsData as unknown as Hadith[])
         if (searchType === 'hadiths') {
           setTotalPages(Math.ceil((count || 0) / ITEMS_PER_PAGE))
         }
@@ -102,15 +131,42 @@ export default function SearchPage() {
   function handleSearch(e: React.FormEvent) {
     e.preventDefault()
     setCurrentPage(1)
+    
+    // Update URL with search params
+    const params = new URLSearchParams()
+    params.set('q', query)
+    params.set('type', searchType)
+    params.set('sp', '1')
+    router.push(`/search?${params.toString()}`, { scroll: false })
+    
     performSearch()
   }
 
   function handleTypeChange(type: SearchType) {
     setSearchType(type)
     setCurrentPage(1)
+    
+    // Update URL
+    const params = new URLSearchParams()
+    params.set('q', query)
+    params.set('type', type)
+    params.set('sp', '1')
+    router.push(`/search?${params.toString()}`, { scroll: false })
+    
     if (hasSearched) {
       performSearch()
     }
+  }
+
+  function handlePageChange(page: number) {
+    setCurrentPage(page)
+    
+    // Update URL
+    const params = new URLSearchParams()
+    params.set('q', query)
+    params.set('type', searchType)
+    params.set('sp', page.toString())
+    router.push(`/search?${params.toString()}`, { scroll: false })
   }
 
   const totalResults = hadiths.length + books.length + topics.length
@@ -206,10 +262,10 @@ export default function SearchPage() {
                 </h2>
                 <div className="space-y-4">
                   {hadiths.map((hadith) => {
-                    // Create link to book viewer with this specific hadith
-                    const bookLink = hadith.global_tid
-                      ? `/books/${hadith.book_id}?tid=${hadith.global_tid}`
-                      : `/books/${hadith.book_id}`
+                    // Create link to book viewer with this specific hadith and back navigation
+                    let bookLink = hadith.global_tid
+                      ? `/books/${hadith.book_id}?tid=${hadith.global_tid}&from=search&q=${encodeURIComponent(query)}&type=${searchType}&sp=${currentPage}`
+                      : `/books/${hadith.book_id}?from=search&q=${encodeURIComponent(query)}&type=${searchType}&sp=${currentPage}`
                     
                     return (
                       <Link
@@ -261,7 +317,11 @@ export default function SearchPage() {
                 </h2>
                 <div className="grid md:grid-cols-2 gap-4">
                   {topics.map((topic) => (
-                    <Link key={topic.id} href={`/topics/${topic.id}`} className="block group">
+                    <Link 
+                      key={topic.id} 
+                      href={`/topics/${topic.id}?from=search&q=${encodeURIComponent(query)}&type=${searchType}&sp=${currentPage}`} 
+                      className="block group"
+                    >
                       <div className="card p-6 hover:shadow-lg transition-all">
                         <h3 className="font-bold text-lg group-hover:text-accent transition-colors">
                           {topic.title}
@@ -282,7 +342,7 @@ export default function SearchPage() {
                 <Pagination
                   currentPage={currentPage}
                   totalPages={totalPages}
-                  onPageChange={setCurrentPage}
+                  onPageChange={handlePageChange}
                 />
               </div>
             )}
@@ -290,6 +350,30 @@ export default function SearchPage() {
         )}
       </div>
     </div>
+  )
+}
+
+export default function SearchPage() {
+  return (
+    <Suspense fallback={
+      <div className="container mx-auto px-4 py-8 max-w-6xl">
+        <div className="space-y-8 animate-entrance">
+          <div className="space-y-4">
+            <h1 className="text-4xl font-bold">البحث</h1>
+            <p className="text-lg text-muted-foreground font-arabic-sans">
+              ابحث في محتوى الكتب والأحاديث والمواضيع
+            </p>
+          </div>
+          <div className="space-y-4">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <div key={i} className="card p-6 animate-pulse bg-muted h-24" />
+            ))}
+          </div>
+        </div>
+      </div>
+    }>
+      <SearchContent />
+    </Suspense>
   )
 }
 
