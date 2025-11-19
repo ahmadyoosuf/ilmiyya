@@ -54,7 +54,7 @@ export default function SearchPage() {
     if (searchType === 'all' || searchType === 'hadiths') {
       const { data: hadithsData, count } = await supabase
         .from('hadiths')
-        .select('*, books(title)', { count: 'exact' })
+        .select('id, global_tid, nass, book_id, books(title)', { count: 'exact' })
         .textSearch('nass', query, { config: 'arabic', type: 'websearch' })
         .range(from, to)
       
@@ -205,15 +205,29 @@ export default function SearchPage() {
                   الأحاديث ({hadiths.length})
                 </h2>
                 <div className="space-y-4">
-                  {hadiths.map((hadith) => (
-                    <div key={hadith.id} className="card p-6 space-y-3">
-                      <div className="flex gap-4 text-sm text-muted-foreground font-arabic-sans">
-                        {hadith.books && <span>الكتاب: {hadith.books.title}</span>}
-                        <span className="mr-auto">#{hadith.id}</span>
-                      </div>
-                      <p className="text-lg leading-loose line-clamp-3">{hadith.nass}</p>
-                    </div>
-                  ))}
+                  {hadiths.map((hadith) => {
+                    // Create link to book viewer with this specific hadith
+                    const bookLink = hadith.global_tid
+                      ? `/books/${hadith.book_id}?tid=${hadith.global_tid}`
+                      : `/books/${hadith.book_id}`
+                    
+                    return (
+                      <Link
+                        key={hadith.id}
+                        href={bookLink}
+                        className="card p-6 space-y-3 block hover:bg-muted hover:shadow-lg transition-all cursor-pointer group"
+                      >
+                        <div className="flex gap-4 text-sm text-muted-foreground font-arabic-sans">
+                          {hadith.books && (
+                            <span className="font-bold group-hover:text-accent transition-colors">
+                              الكتاب: {hadith.books.title}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-lg leading-loose line-clamp-3">{hadith.nass}</p>
+                      </Link>
+                    )
+                  })}
                 </div>
               </div>
             )}
@@ -247,7 +261,7 @@ export default function SearchPage() {
                 </h2>
                 <div className="grid md:grid-cols-2 gap-4">
                   {topics.map((topic) => (
-                    <Link key={topic.id} href="/topics" className="block group">
+                    <Link key={topic.id} href={`/topics/${topic.id}`} className="block group">
                       <div className="card p-6 hover:shadow-lg transition-all">
                         <h3 className="font-bold text-lg group-hover:text-accent transition-colors">
                           {topic.title}

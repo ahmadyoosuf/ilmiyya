@@ -8,12 +8,21 @@ import { Database } from '@/lib/supabase/types'
 import { Tree, TreeNode } from '@/components/Tree'
 import { ChevronLeft, ChevronRight, Menu, X } from 'lucide-react'
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet'
+import { cn } from '@/lib/utils'
 
 type Book = Database['public']['Tables']['books']['Row']
 type Hadith = Database['public']['Tables']['hadiths']['Row']
+type Topic = Database['public']['Tables']['topics']['Row']
 
 interface TOCStructure {
   parts: Map<string, Set<string>>
+}
+
+interface BookTOCEntry {
+  tit: string  // title
+  lvl: number  // level (1, 2, 3, etc.)
+  sub: number  // sub-level
+  id: number   // hadith id this section starts at
 }
 
 const HADITHS_PER_PAGE = 1
@@ -28,6 +37,7 @@ export default function BookReaderPage({ params }: { params: Promise<{ id: strin
   const [totalPages, setTotalPages] = useState(1)
   const [selectedPart, setSelectedPart] = useState<string | null>(null)
   const [selectedPage, setSelectedPage] = useState<string | null>(null)
+  const [selectedTopicId, setSelectedTopicId] = useState<number | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
   const [backLink, setBackLink] = useState<string | null>(null)
@@ -51,34 +61,43 @@ export default function BookReaderPage({ params }: { params: Promise<{ id: strin
       }
 
       if (tid) {
-        try {
-          // Fetch target hadith to get its id and position
-          const { data: target, error } = await supabase
-            .from('hadiths')
-            .select('id, book_id')
-            .eq('global_tid', Number(tid))
-            .eq('book_id', id)
-            .single()
-
-          if (error || !target) return
-
-          // Count hadiths with id < target.id to determine page
-          const { count } = await supabase
-            .from('hadiths')
-            .select('*', { count: 'exact', head: true })
-            .eq('book_id', target.book_id)
-            .lt('id', target.id)
-
-          // Set page (count + 1 because page 1 starts at count 0)
-          setCurrentPage((count || 0) + 1)
-        } catch (err) {
-          console.error('Error handling deep link:', err)
-        }
+        await jumpToHadith(Number(tid), true)
       }
     }
 
     handleDeepLink()
   }, [searchParams, id, supabase])
+
+  // Helper to jump to a specific hadith (by local ID or global TID)
+  async function jumpToHadith(identifier: number, isGlobalTid: boolean = false) {
+    try {
+      let targetId = identifier
+      
+      if (isGlobalTid) {
+        const { data: target, error } = await supabase
+          .from('hadiths')
+          .select('id')
+          .eq('global_tid', identifier)
+          .eq('book_id', id)
+          .single()
+        
+        if (error || !target) return
+        targetId = target.id
+      }
+
+      // Count hadiths with id < targetId to determine page
+      const { count } = await supabase
+        .from('hadiths')
+        .select('*', { count: 'exact', head: true })
+        .eq('book_id', id)
+        .lt('id', targetId)
+
+      // Set page (count + 1 because page 1 starts at count 0)
+      setCurrentPage(Math.ceil(((count || 0) + 1) / HADITHS_PER_PAGE))
+    } catch (err) {
+      console.error('Error jumping to hadith:', err)
+    }
+  }
 
   // Fetch book info and build TOC
   useEffect(() => {
@@ -91,17 +110,22 @@ export default function BookReaderPage({ params }: { params: Promise<{ id: strin
       
       if (bookData) {
         setBook(bookData)
-      }
-
-      // Fetch distinct parts and pages for TOC
-      const { data: hadithsData } = await supabase
-        .from('hadiths')
-        .select('part, page')
-        .eq('book_id', id)
-        .order('id')
-      
-      if (hadithsData) {
-        buildTOC(hadithsData)
+        
+        // Build TOC from book's toc column (stored from JSON file)
+        if (bookData.toc && Array.isArray(bookData.toc)) {
+          buildBookTOC(bookData.toc as unknown as BookTOCEntry[])
+        } else {
+          // Fallback to Part/Page TOC if no toc data
+          const { data: hadithsData } = await supabase
+            .from('hadiths')
+            .select('part, page')
+            .eq('book_id', id)
+            .order('id')
+          
+          if (hadithsData) {
+            buildTOC(hadithsData)
+          }
+        }
       }
     }
     fetchBook()
@@ -112,7 +136,7 @@ export default function BookReaderPage({ params }: { params: Promise<{ id: strin
     async function fetchHadiths() {
       setIsLoading(true)
       
-      let countQuery = supabase
+      let countQuery: any = supabase
         .from('hadiths')
         .select('*', { count: 'exact', head: true })
         .eq('book_id', id)
@@ -123,6 +147,9 @@ export default function BookReaderPage({ params }: { params: Promise<{ id: strin
       if (selectedPage) {
         countQuery = countQuery.eq('page', selectedPage)
       }
+      // Note: We don't filter by selectedTopicId anymore because we want to jump to the start 
+      // of the topic but allow reading subsequent hadiths (which might not be explicitly linked).
+      // The jumping is handled by setting currentPage.
 
       const { count } = await countQuery
       const totalCount = count || 0
@@ -131,7 +158,7 @@ export default function BookReaderPage({ params }: { params: Promise<{ id: strin
       const from = (currentPage - 1) * HADITHS_PER_PAGE
       const to = from + HADITHS_PER_PAGE - 1
 
-      let query = supabase
+      let query: any = supabase
         .from('hadiths')
         .select('*')
         .eq('book_id', id)
@@ -144,11 +171,12 @@ export default function BookReaderPage({ params }: { params: Promise<{ id: strin
       if (selectedPage) {
         query = query.eq('page', selectedPage)
       }
-
+      // Don't filter by topic ID for the main query either
+      
       const { data } = await query
       
       if (data) {
-        setHadiths(data)
+        setHadiths(data as unknown as Hadith[])
       }
       
       setIsLoading(false)
@@ -156,6 +184,52 @@ export default function BookReaderPage({ params }: { params: Promise<{ id: strin
 
     fetchHadiths()
   }, [id, currentPage, selectedPart, selectedPage])
+
+  function buildBookTOC(tocEntries: BookTOCEntry[]) {
+    // Build hierarchical tree from flat TOC array
+    const entryMap = new Map<number, BookTOCEntry & { children: any[] }>()
+    const roots: any[] = []
+
+    // Initialize all entries
+    tocEntries.forEach(entry => {
+      entryMap.set(entry.id, { ...entry, children: [] })
+    })
+
+    // Build hierarchy based on levels
+    tocEntries.forEach((entry, index) => {
+      const node = entryMap.get(entry.id)!
+      
+      // Find parent: look backwards for nearest entry with lower level
+      let parentIndex = -1
+      for (let i = index - 1; i >= 0; i--) {
+        if (tocEntries[i].lvl < entry.lvl) {
+          parentIndex = i
+          break
+        }
+      }
+      
+      if (parentIndex >= 0) {
+        const parent = entryMap.get(tocEntries[parentIndex].id)
+        if (parent) {
+          parent.children.push(node)
+        }
+      } else {
+        roots.push(node)
+      }
+    })
+
+    // Convert to TreeNode format
+    const convertToTreeNode = (node: BookTOCEntry & { children: any[] }): TreeNode => {
+      return {
+        id: `toc-${node.id}`,
+        label: node.tit,
+        data: { type: 'toc', hadithId: node.id, level: node.lvl },
+        children: node.children.length > 0 ? node.children.map(convertToTreeNode) : undefined,
+      }
+    }
+
+    setTocTree(roots.map(convertToTreeNode))
+  }
 
   function buildTOC(hadiths: Array<{ part: string | null; page: string | null }>) {
     const structure: TOCStructure = { parts: new Map() }
@@ -188,17 +262,40 @@ export default function BookReaderPage({ params }: { params: Promise<{ id: strin
     if (node.data?.type === 'part') {
       setSelectedPart(node.data.value)
       setSelectedPage(null)
+      setSelectedTopicId(null)
+      setCurrentPage(1)
     } else if (node.data?.type === 'page') {
       setSelectedPart(node.data.part)
       setSelectedPage(node.data.value)
+      setSelectedTopicId(null)
+      setCurrentPage(1)
+    } else if (node.data?.type === 'toc') {
+      // Jump to the hadith where this TOC section starts
+      if (node.data.hadithId) {
+        jumpToHadith(node.data.hadithId, false)
+      }
+      setSelectedPart(null)
+      setSelectedPage(null)
+      setSelectedTopicId(null)
+    } else if (node.data?.type === 'topic') {
+      setSelectedTopicId(node.data.value)
+      setSelectedPart(null)
+      setSelectedPage(null)
+      
+      // Jump to the starting hadith for this topic
+      if (node.data.startHadithId) {
+        jumpToHadith(node.data.startHadithId, false)
+      } else {
+        console.warn('No start hadith found for topic:', node.label)
+      }
     }
-    setCurrentPage(1)
     setIsSidebarOpen(false)
   }
 
   function clearFilter() {
     setSelectedPart(null)
     setSelectedPage(null)
+    setSelectedTopicId(null)
     setCurrentPage(1)
   }
 
@@ -206,7 +303,7 @@ export default function BookReaderPage({ params }: { params: Promise<{ id: strin
     <div className="h-full flex flex-col">
       <div className="p-4 border-b border-border">
         <h3 className="font-bold font-arabic-sans mb-2">جدول المحتويات</h3>
-        {(selectedPart || selectedPage) && (
+        {(selectedPart || selectedPage || selectedTopicId) && (
           <button
             onClick={clearFilter}
             className="text-sm text-accent hover:underline font-arabic-sans"
@@ -216,7 +313,7 @@ export default function BookReaderPage({ params }: { params: Promise<{ id: strin
         )}
       </div>
       <div className="flex-1 overflow-y-auto p-4">
-        <Tree nodes={tocTree} selectedId={selectedPage ? undefined : selectedPart} onSelect={handleTOCSelect} />
+        <Tree nodes={tocTree} selectedId={selectedTopicId || (selectedPage ? undefined : selectedPart || undefined)} onSelect={handleTOCSelect} />
       </div>
     </div>
   )
@@ -278,40 +375,75 @@ export default function BookReaderPage({ params }: { params: Promise<{ id: strin
             </div>
           ) : (
             <div className="max-w-4xl mx-auto space-y-6">
-              {hadiths.map((hadith) => (
-                <div key={hadith.id} className="card p-6">
-                  <p className="text-lg leading-loose">{hadith.nass}</p>
-                </div>
-              ))}
+              {hadiths.map((hadith) => {
+                // Process the hadith text: handle \r for line breaks
+                const processedText = hadith.nass
+                  .split('\r') // Split by \r to create line breaks
+                  .filter(line => line.trim()) // Remove empty lines
+                
+                return (
+                  <div key={hadith.id} className="card p-6 space-y-3">
+                    <div className="flex gap-4 text-sm text-muted-foreground font-arabic-sans">
+                      {hadith.part && <span>الجزء: {hadith.part}</span>}
+                      {hadith.page && <span>الصفحة: {hadith.page}</span>}
+                    </div>
+                    <div className="text-lg leading-loose space-y-2">
+                      {processedText.map((line, index) => (
+                        <p key={index} className="text-right">
+                          {line.trim()}
+                        </p>
+                      ))}
+                    </div>
+                  </div>
+                )
+              })}
             </div>
           )}
         </div>
 
-        {/* Pagination Controls - Always visible and handy */}
+        {/* Premium Floating Navigation Arrows */}
         {totalPages > 1 && (
-          <div className="sticky bottom-0 border-t border-border bg-card/95 backdrop-blur-sm p-4 flex items-center justify-between shadow-lg">
-            <button
-              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-              disabled={currentPage === 1}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-accent text-accent-foreground disabled:opacity-50 disabled:cursor-not-allowed hover:scale-105 transition-transform font-arabic-sans shadow-sm"
-            >
-              <ChevronRight className="w-5 h-5" />
-              السابق
-            </button>
-            
-            <span className="font-arabic-sans font-semibold">
-              صفحة {currentPage} من {totalPages}
-            </span>
-            
+          <>
+            {/* Next Button - Left Corner */}
             <button
               onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
               disabled={currentPage === totalPages}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-accent text-accent-foreground disabled:opacity-50 disabled:cursor-not-allowed hover:scale-105 transition-transform font-arabic-sans shadow-sm"
+              className={cn(
+                "fixed left-4 top-1/2 -translate-y-1/2 z-20",
+                "w-12 h-12 md:w-14 md:h-14 rounded-full",
+                "bg-accent/90 backdrop-blur-md text-accent-foreground",
+                "shadow-lg hover:shadow-xl",
+                "flex items-center justify-center",
+                "transition-all duration-300 ease-out",
+                "hover:scale-110 hover:bg-accent active:scale-95",
+                "disabled:opacity-0 disabled:pointer-events-none",
+                "group"
+              )}
+              aria-label="التالي"
             >
-              التالي
-              <ChevronLeft className="w-5 h-5" />
+              <ChevronLeft className="w-6 h-6 md:w-7 md:h-7 transition-transform group-hover:translate-x-0.5" />
             </button>
-          </div>
+
+            {/* Previous Button - Right Corner */}
+            <button
+              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+              disabled={currentPage === 1}
+              className={cn(
+                "fixed right-4 top-1/2 -translate-y-1/2 z-20",
+                "w-12 h-12 md:w-14 md:h-14 rounded-full",
+                "bg-accent/90 backdrop-blur-md text-accent-foreground",
+                "shadow-lg hover:shadow-xl",
+                "flex items-center justify-center",
+                "transition-all duration-300 ease-out",
+                "hover:scale-110 hover:bg-accent active:scale-95",
+                "disabled:opacity-0 disabled:pointer-events-none",
+                "group"
+              )}
+              aria-label="السابق"
+            >
+              <ChevronRight className="w-6 h-6 md:w-7 md:h-7 transition-transform group-hover:-translate-x-0.5" />
+            </button>
+          </>
         )}
       </div>
 

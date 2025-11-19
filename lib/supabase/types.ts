@@ -16,6 +16,7 @@ export type Database = {
           file_path: string
           id: string
           title: string
+          toc: Json | null
         }
         Insert: {
           category_id: number
@@ -23,6 +24,7 @@ export type Database = {
           file_path: string
           id?: string
           title: string
+          toc?: Json | null
         }
         Update: {
           category_id?: number
@@ -30,6 +32,7 @@ export type Database = {
           file_path?: string
           id?: string
           title?: string
+          toc?: Json | null
         }
         Relationships: [
           {
