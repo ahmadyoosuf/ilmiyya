@@ -73,7 +73,7 @@ const ABOUT_CONTENT: Record<Language, AboutCopy> = {
     paragraphOne:
       'All praise belongs to Allah, and may peace and blessings be upon His Messenger. This application is a humble effort to serve the Prophetic Sunnah. Conceived by Tamim bin Abdul Fattah Al-Hindi, Al-Maktabah Al-Ilmiyyah is a desktop platform for the study and preservation of Hadith literature.',
     paragraphTwo:
-      'Built for simplicity and effectiveness, the app offers full Arabic support, JSON-based content management, and an innovative topic tree that organizes Prophetic hadiths by subject, enabling easy navigation for scholars and students.',
+      'Built for simplicity and effectiveness, the app offers full Arabic support, organized content management, and an innovative topic tree that organizes Prophetic hadiths by subject, enabling easy navigation for scholars and students.',
     credit:
       'The UI/UX was designed by Engineer Ahmed bin Youssef Al-Hindi. May Allah reward both contributors abundantly.',
     contactSection: {
@@ -90,7 +90,7 @@ const ABOUT_CONTENT: Record<Language, AboutCopy> = {
     paragraphOne:
       'الحمد لله والصلاة والسلام على رسول الله. هذا التطبيق جهد متواضع لخدمة السنة النبوية. من فكرة تميم بن عبد الفتاح الهندي، المكتبة العلمية هي منصة مكتبية لدراسة الحديث النبوي والحفاظ عليه.',
     paragraphTwo:
-      'صُمم التطبيق ليكون بسيطاً وفعالاً، وهو يوفر دعماً كاملاً للغة العربية، وإدارة محتوى بنظام JSON، وشجرة مواضيع مبتكرة تنظم الأحاديث حسب الموضوع، مما يسهل على الباحثين والطلاب تصفحها.',
+      'صُمم التطبيق ليكون بسيطاً وفعالاً، وهو يوفر دعماً كاملاً للغة العربية، وإدارة محتوى منظمة، وشجرة مواضيع مبتكرة تنظم الأحاديث حسب الموضوع، مما يسهل على الباحثين والطلاب تصفحها.',
     credit:
       'صمم واجهة المستخدم المهندس أحمد بن يوسف الهندي. جزى الله المساهمين خير الجزاء.',
     contactSection: {
@@ -106,7 +106,7 @@ const ABOUT_CONTENT: Record<Language, AboutCopy> = {
     paragraphOne:
       'எல்லாப் புகழும் அல்லாஹ்வுக்கே. அவனது தூதர் மீது அமைதியும் கருணையும் உண்டாகட்டும். இச்செயலி, நபிவழிக்குச் சேவை செய்யும் ஒரு சிறிய முயற்சி. தமீம் பின் அப்துல் ஃபத்தாஹ் அல்-ஹிந்தி அவர்களின் சிந்தனையில் உருவான "அல்-மக்தபா அல்-இல்மிய்யா", ஹதீஸ்களைப் படிக்கவும் பாதுகாக்கவும் உருவாக்கப்பட்ட ஒரு கணினித் தளமாகும்.',
     paragraphTwo:
-      'எளிமையையும் செயல்திறனையும் நோக்கமாகக் கொண்டு உருவாக்கப்பட்ட இச்செயலி, அரபி மொழிக்கு முழு ஆதரவு, JSON வழி உள்ளடக்க மேலாண்மை மற்றும் அனைத்து ஹதீஸ்களையும் தலைப்பு வாரியாகப் பிரிக்கும் பொருளடக்கப் பட்டியல் போன்ற அம்சங்களைக் கொண்டுள்ளது. இது ஆய்வாளர்கள் மிக எளிதாக ஹதீஸ்களைக் கையாள உதவுகிறது.',
+      'எளிமையையும் செயல்திறனையும் நோக்கமாகக் கொண்டு உருவாக்கப்பட்ட இச்செயலி, அரபி மொழிக்கு முழு ஆதரவு, ஒழுங்கமைக்கப்பட்ட உள்ளடக்க மேலாண்மை மற்றும் அனைத்து ஹதீஸ்களையும் தலைப்பு வாரியாகப் பிரிக்கும் பொருளடக்கப் பட்டியல் போன்ற அம்சங்களைக் கொண்டுள்ளது. இது ஆய்வாளர்கள் மிக எளிதாக ஹதீஸ்களைக் கையாள உதவுகிறது.',
     credit:
       'இதன் UI/UX வடிவமைப்பை பொறியாளர் அஹ்மத் பின் யூசுஃப் அல்-ஹிந்தி உருவாக்கினார். பங்களித்த இருவருக்கும் அல்லாஹ் நற்கூலி வழங்குவானாக.',
     contactSection: {

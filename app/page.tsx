@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { BookOpen, List, Search } from 'lucide-react'
 import type { Metadata } from 'next'
+import { getSupabaseServerClient } from '@/lib/supabase/server'
 
 // Page-specific SEO metadata (invisible to users - only for search engines)
 export const metadata: Metadata = {
@@ -34,7 +35,32 @@ const homeJsonLd = {
   isPartOf: { "@id": "https://ilmiyya.com/#website" },
 }
 
-export default function HomePage() {
+export const dynamic = 'force-dynamic'
+
+async function recordVisitAndGetCount() {
+  const supabase = await getSupabaseServerClient()
+
+  const { error: insertError } = await supabase.from('visits').insert({})
+  if (insertError) {
+    console.error('Failed to record visit', insertError.message)
+  }
+
+  const { count, error: countError } = await supabase
+    .from('visits')
+    .select('id', { count: 'exact', head: true })
+
+  if (countError) {
+    console.error('Failed to fetch visit count', countError.message)
+    return 500
+  }
+
+  return typeof count === 'number' ? count : 500
+}
+
+export default async function HomePage() {
+  const visitorCount = await recordVisitAndGetCount()
+  const formattedVisitorCount = new Intl.NumberFormat('en-US').format(visitorCount)
+
   return (
     <>
       {/* SEO JSON-LD - Hidden from users */}
@@ -110,6 +136,10 @@ export default function HomePage() {
           <div className="text-center pt-4 md:pt-8 space-y-2 md:space-y-4">
             <p className="text-sm text-muted-foreground font-arabic-sans">
               مكتبة شاملة تضم آلاف الأحاديث من مصادر موثوقة
+            </p>
+            <p className="text-xs md:text-sm text-muted-foreground font-arabic-sans">
+              <span className="font-semibold text-foreground">{formattedVisitorCount}</span>{' '}
+              زائر حتى الآن
             </p>
           </div>
         </div>
