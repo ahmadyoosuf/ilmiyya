@@ -234,7 +234,7 @@ function TopicsPageContent() {
     <>
       {/* Mobile View */}
       <div className="md:hidden min-h-screen bg-background">
-        <div className="container mx-auto px-4 py-6 space-y-6 pb-safe">
+      <div className="container mx-auto px-4 py-5 space-y-5 pb-safe">
           {/* Mobile Header */}
           <div className="space-y-4 animate-in fade-in slide-in-from-top-2 duration-500">
             <h1 className="text-3xl md:text-4xl font-bold">المواضيع</h1>

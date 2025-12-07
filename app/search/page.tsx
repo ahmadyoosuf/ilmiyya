@@ -24,7 +24,7 @@ const ITEMS_PER_PAGE = 10
 function SearchContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  
+
   const [query, setQuery] = useState('')
   const [searchType, setSearchType] = useState<SearchType>('all')
   const [hadiths, setHadiths] = useState<Hadith[]>([])
@@ -86,7 +86,7 @@ function SearchContent() {
         .select('id, global_tid, nass, book_id, books(title)', { count: 'exact' })
         .textSearch('nass', query, { config: 'arabic', type: 'websearch' })
         .range(from, to)
-      
+
       if (hadithsData) {
         setHadiths(hadithsData as unknown as Hadith[])
         if (searchType === 'hadiths') {
@@ -101,7 +101,7 @@ function SearchContent() {
         .select('*, categories(name_ar)', { count: 'exact' })
         .textSearch('title', query, { config: 'arabic', type: 'websearch' })
         .range(from, to)
-      
+
       if (booksData) {
         setBooks(booksData)
         if (searchType === 'books') {
@@ -116,7 +116,7 @@ function SearchContent() {
         .select('*', { count: 'exact' })
         .textSearch('title', query, { config: 'arabic', type: 'websearch' })
         .range(from, to)
-      
+
       if (topicsData) {
         setTopics(topicsData)
         if (searchType === 'topics') {
@@ -131,28 +131,28 @@ function SearchContent() {
   function handleSearch(e: React.FormEvent) {
     e.preventDefault()
     setCurrentPage(1)
-    
+
     // Update URL with search params
     const params = new URLSearchParams()
     params.set('q', query)
     params.set('type', searchType)
     params.set('sp', '1')
     router.push(`/search?${params.toString()}`, { scroll: false })
-    
+
     performSearch()
   }
 
   function handleTypeChange(type: SearchType) {
     setSearchType(type)
     setCurrentPage(1)
-    
+
     // Update URL
     const params = new URLSearchParams()
     params.set('q', query)
     params.set('type', type)
     params.set('sp', '1')
     router.push(`/search?${params.toString()}`, { scroll: false })
-    
+
     if (hasSearched) {
       performSearch()
     }
@@ -160,7 +160,7 @@ function SearchContent() {
 
   function handlePageChange(page: number) {
     setCurrentPage(page)
-    
+
     // Update URL
     const params = new URLSearchParams()
     params.set('q', query)
@@ -217,11 +217,10 @@ function SearchContent() {
                   key={type.value}
                   type="button"
                   onClick={() => handleTypeChange(type.value as SearchType)}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-lg font-arabic-sans transition-all ${
-                    searchType === type.value
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg font-arabic-sans transition-all ${searchType === type.value
                       ? 'bg-accent text-accent-foreground'
                       : 'bg-card hover:bg-muted'
-                  }`}
+                    }`}
                 >
                   <Icon className="w-4 h-4" />
                   {type.label}
@@ -266,7 +265,7 @@ function SearchContent() {
                     let bookLink = hadith.global_tid
                       ? `/books/${hadith.book_id}?tid=${hadith.global_tid}&from=search&q=${encodeURIComponent(query)}&type=${searchType}&sp=${currentPage}`
                       : `/books/${hadith.book_id}?from=search&q=${encodeURIComponent(query)}&type=${searchType}&sp=${currentPage}`
-                    
+
                     return (
                       <Link
                         key={hadith.id}
@@ -317,9 +316,9 @@ function SearchContent() {
                 </h2>
                 <div className="grid md:grid-cols-2 gap-4">
                   {topics.map((topic) => (
-                    <Link 
-                      key={topic.id} 
-                      href={`/topics/${topic.id}?from=search&q=${encodeURIComponent(query)}&type=${searchType}&sp=${currentPage}`} 
+                    <Link
+                      key={topic.id}
+                      href={`/topics/${topic.id}?from=search&q=${encodeURIComponent(query)}&type=${searchType}&sp=${currentPage}`}
                       className="block group"
                     >
                       <div className="card p-6 hover:shadow-lg transition-all">
@@ -376,4 +375,3 @@ export default function SearchPage() {
     </Suspense>
   )
 }
-

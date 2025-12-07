@@ -71,3 +71,9 @@ node check-toc.js
 
 You should see books with TOC data populated.
 
+
+
+
+
+
+

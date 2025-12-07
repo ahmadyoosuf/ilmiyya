@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @import "tw-animate-css";
+@import url("https://fonts.googleapis.com/css2?family=Scheherazade+New:wght@400;700&family=Noto+Naskh+Arabic:wght@400;600&display=swap");
 
 /* Support for 2 premium themes with data-theme attribute */
 @custom-variant sepia (&:is([data-theme="sepia"] *));
@@ -85,6 +86,8 @@
   --font-sans: "Tajawal", "Tajawal Fallback", system-ui;
   --font-arabic: "Amiri", "Amiri Fallback", serif;
   --font-arabic-sans: "Tajawal", "Tajawal Fallback", sans-serif;
+  --font-book: "Scheherazade New", "Traditional Arabic", "Amiri", serif;
+  --font-toc: "Noto Naskh Arabic", "Tajawal", "Segoe UI", sans-serif;
   --radius: 0.75rem;
 
   /* Map CSS variables to Tailwind */
@@ -151,6 +154,35 @@
 
   .font-arabic-sans {
     font-family: var(--font-arabic-sans);
+  }
+
+  /* Book reader typography */
+  .font-book {
+    font-family: var(--font-book);
+    line-height: 2;
+  }
+
+  /* TOC / navigation typography */
+  .font-toc {
+    font-family: var(--font-toc);
+  }
+
+  /* Tree nodes (book TOC, topics tree) */
+  .tree-node {
+    cursor: pointer;
+    border-radius: 0.5rem;
+    padding-inline: 0.5rem;
+    padding-block: 0.35rem;
+    transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+  }
+
+  .tree-node:hover {
+    background-color: color-mix(in oklch, var(--muted) 60%, transparent);
+  }
+
+  .tree-node.selected {
+    background-color: var(--accent);
+    color: var(--accent-foreground);
   }
 
   /* Mobile-optimized tree nodes */

@@ -44,6 +44,12 @@ export function Header() {
           >
             تبرع
           </Link>
+          <Link 
+            href="/about" 
+            className="text-sm font-medium transition-colors hover:text-accent"
+          >
+            عن المشروع
+          </Link>
         </nav>
         
         <div className="ml-auto">

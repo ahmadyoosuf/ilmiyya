@@ -130,3 +130,9 @@ After completing the steps, the book reader sidebar will show:
 - [ ] No console errors
 - [ ] Mobile sidebar also shows TOC correctly
 
+
+
+
+
+
+

@@ -1,0 +1,43 @@
+User-agent: *
+Allow: /
+
+# Sitemap
+Sitemap: https://ilmiyya.com/sitemap.xml
+
+# Crawl delay for polite crawling
+Crawl-delay: 1
+
+# Block API routes
+Disallow: /api/
+Disallow: /_next/
+
+# Allow all other content
+Allow: /books
+Allow: /topics
+Allow: /search
+Allow: /download
+Allow: /about
+Allow: /donate
+
+# Google specific
+User-agent: Googlebot
+Allow: /
+Crawl-delay: 0
+
+# Bing specific
+User-agent: Bingbot
+Allow: /
+Crawl-delay: 1
+
+# Yandex for Middle East/Russian traffic
+User-agent: Yandex
+Allow: /
+Crawl-delay: 2
+
+# Baidu for Asian traffic
+User-agent: Baiduspider
+Allow: /
+Crawl-delay: 2
+
+# Host declaration
+Host: https://ilmiyya.com

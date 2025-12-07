@@ -20,7 +20,7 @@ export default function BooksPage() {
         .from('categories')
         .select('*')
         .order('name_ar')
-      
+
       if (data) {
         setCategories(data)
       }
@@ -79,4 +79,3 @@ export default function BooksPage() {
     </div>
   )
 }
-

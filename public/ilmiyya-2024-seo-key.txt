@@ -1,0 +1,4 @@
+# Indexnow Key for fast search engine indexing
+# This key is used by Bing, Yandex, and other search engines supporting IndexNow protocol
+# To use: Submit your URLs to https://api.indexnow.org/indexnow with this key
+ilmiyya-2024-seo-key

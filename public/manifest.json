@@ -1,0 +1,111 @@
+{
+    "name": "المكتبة العلمية - Ilmiyya Islamic Library",
+    "short_name": "المكتبة العلمية",
+    "description": "مكتبة إسلامية شاملة للبحث في كتب الحديث والسنة النبوية. The best Islamic hadith library.",
+    "start_url": "/",
+    "display": "standalone",
+    "background_color": "#f5f0e6",
+    "theme_color": "#8b7355",
+    "orientation": "portrait-primary",
+    "scope": "/",
+    "lang": "ar",
+    "dir": "rtl",
+    "categories": [
+        "education",
+        "books",
+        "reference"
+    ],
+    "iarc_rating_id": "e84b072d-71b3-4d3e-86ae-31a8ce4e53b7",
+    "prefer_related_applications": false,
+    "icons": [
+        {
+            "src": "/logo.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "any maskable"
+        },
+        {
+            "src": "/logo.png",
+            "sizes": "192x192",
+            "type": "image/png",
+            "purpose": "any"
+        },
+        {
+            "src": "/logo.png",
+            "sizes": "384x384",
+            "type": "image/png",
+            "purpose": "any"
+        },
+        {
+            "src": "/logo.png",
+            "sizes": "256x256",
+            "type": "image/png",
+            "purpose": "maskable"
+        }
+    ],
+    "shortcuts": [
+        {
+            "name": "البحث في الأحاديث",
+            "short_name": "بحث",
+            "description": "البحث في الأحاديث النبوية والكتب الإسلامية",
+            "url": "/search",
+            "icons": [
+                {
+                    "src": "/logo.png",
+                    "sizes": "96x96"
+                }
+            ]
+        },
+        {
+            "name": "تصفح الكتب",
+            "short_name": "الكتب",
+            "description": "تصفح مجموعة الكتب والمصادر الإسلامية",
+            "url": "/books",
+            "icons": [
+                {
+                    "src": "/logo.png",
+                    "sizes": "96x96"
+                }
+            ]
+        },
+        {
+            "name": "المواضيع",
+            "short_name": "مواضيع",
+            "description": "تصفح الأحاديث حسب الموضوعات",
+            "url": "/topics",
+            "icons": [
+                {
+                    "src": "/logo.png",
+                    "sizes": "96x96"
+                }
+            ]
+        },
+        {
+            "name": "تحميل التطبيق",
+            "short_name": "تحميل",
+            "description": "تحميل تطبيق المكتبة العلمية للكمبيوتر",
+            "url": "/download",
+            "icons": [
+                {
+                    "src": "/logo.png",
+                    "sizes": "96x96"
+                }
+            ]
+        }
+    ],
+    "related_applications": [
+        {
+            "platform": "windows",
+            "url": "https://ilmiyya.com/download"
+        }
+    ],
+    "screenshots": [
+        {
+            "src": "/logo.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "form_factor": "wide",
+            "label": "المكتبة العلمية - الصفحة الرئيسية"
+        }
+    ]
+}

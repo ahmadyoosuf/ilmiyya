@@ -1,6 +1,7 @@
 'use client'
 
-import { use, useEffect, useState, useMemo, useCallback } from 'react'
+import type React from 'react'
+import { use, useEffect, useState, useMemo, useCallback, useRef } from 'react'
 import { useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { getSupabaseBrowserClient } from '@/lib/supabase/client'
@@ -42,8 +43,18 @@ export default function BookReaderPage({ params }: { params: Promise<{ id: strin
   const [isTocLoading, setIsTocLoading] = useState(true) // Separate loading state for TOC
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
   const [backLink, setBackLink] = useState<string | null>(null)
+  const [tocError, setTocError] = useState<string | null>(null)
+  const touchStartX = useRef<number>(0)
+  const touchEndX = useRef<number>(0)
+  const [tocNodeMappings, setTocNodeMappings] = useState<{ nodeId: string | number; hadithId: number }[]>([])
+  const [currentTocNodeId, setCurrentTocNodeId] = useState<string | number | undefined>(undefined)
 
   const supabase = getSupabaseBrowserClient()
+
+  const currentHadithId = useMemo<number | undefined>(() => {
+    if (hadiths.length === 0) return undefined
+    return Math.min(...hadiths.map((hadith) => hadith.id))
+  }, [hadiths])
 
   // Handle deep-linking by global_tid and back navigation
   useEffect(() => {
@@ -113,56 +124,112 @@ export default function BookReaderPage({ params }: { params: Promise<{ id: strin
 
   // Fetch book info and build TOC
   useEffect(() => {
+    let isCancelled = false
+    
     async function fetchBook() {
       setIsTocLoading(true)
+      setTocError(null)
       
-      const { data: bookData } = await supabase
-        .from('books')
-        .select('*')
-        .eq('id', id)
-        .single()
-      
-      if (bookData) {
-        setBook(bookData)
+      try {
+        // Fetch only the book metadata first (fast)
+        const { data: bookData, error: bookError } = await supabase
+          .from('books')
+          .select('id, title, category_id, file_path, toc')
+          .eq('id', id)
+          .single()
         
-        // Build TOC from book's toc column (stored from JSON file)
-        if (bookData.toc && Array.isArray(bookData.toc)) {
-          // Fast path: TOC is already in database, build immediately
-          buildBookTOC(bookData.toc as unknown as BookTOCEntry[])
-          setIsTocLoading(false)
-        } else {
-          // Slow path: No TOC in database, build from hadiths
-          // Load part/page structure in background (distinct values only)
-          fetchPartPageStructure()
+        if (bookError) throw bookError
+        if (isCancelled) return
+        
+        if (bookData) {
+          setBook(bookData as Book)
+          
+          // Build TOC from book's toc column (stored from JSON file)
+          if (bookData.toc && Array.isArray(bookData.toc)) {
+            // Fast path: TOC is already in database, build immediately (optimized for very large arrays)
+            const tocArray = bookData.toc as unknown as BookTOCEntry[]
+            buildBookTOC(tocArray)
+          } else {
+            // Slow path: No TOC in database, build simplified structure
+            // Use a more aggressive limit and timeout
+            await fetchPartPageStructure()
+          }
         }
-      } else {
-        setIsTocLoading(false)
+      } catch (error) {
+        console.error('Error fetching book:', error)
+        if (!isCancelled) {
+          setTocError('فشل تحميل الفهرس')
+          setIsTocLoading(false)
+          // Show a simple fallback
+          setTocNodeMappings([])
+          setTocTree([{
+            id: 'error',
+            label: 'فشل تحميل الفهرس',
+            data: { type: 'error' }
+          }])
+        }
       }
     }
     
     async function fetchPartPageStructure() {
-      // Use limited query to get unique part/page combinations efficiently
-      const { data: hadithsData } = await supabase
-        .from('hadiths')
-        .select('part, page')
-        .eq('book_id', id)
-        .order('part, page')
-        .limit(1000) // Limit to first 1000 to avoid huge queries
-      
-      if (hadithsData && hadithsData.length > 0) {
-        buildTOC(hadithsData)
-      } else {
-        // No data, show empty state
-        setTocTree([{
-          id: 'empty',
-          label: 'لا يوجد فهرس',
-          data: { type: 'empty' }
-        }])
+      try {
+        // Create a timeout promise (5 seconds max)
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Query timeout')), 5000)
+        )
+        
+        // Query with aggressive limit
+        const queryPromise = supabase
+          .from('hadiths')
+          .select('part, page')
+          .eq('book_id', id)
+          .order('part', { ascending: true })
+          .order('page', { ascending: true })
+          .limit(500) // Reduced from 1000
+        
+        // Race between query and timeout
+        const { data: hadithsData, error } = await Promise.race([
+          queryPromise,
+          timeoutPromise
+        ]) as any
+        
+        if (error) throw error
+        if (isCancelled) return
+        
+        if (hadithsData && hadithsData.length > 0) {
+          buildTOC(hadithsData)
+        } else {
+          // No data, show empty state
+          setTocNodeMappings([])
+          setTocTree([{
+            id: 'empty',
+            label: 'لا يوجد فهرس',
+            data: { type: 'empty' }
+          }])
+        }
+      } catch (error) {
+        console.error('Error fetching part/page structure:', error)
+        if (!isCancelled) {
+          // Show minimal TOC on error
+          setTocNodeMappings([])
+          setTocTree([{
+            id: 'error',
+            label: 'فشل تحميل الفهرس',
+            data: { type: 'error' }
+          }])
+        }
+      } finally {
+        if (!isCancelled) {
+          setIsTocLoading(false)
+        }
       }
-      setIsTocLoading(false)
     }
     
     fetchBook()
+    
+    return () => {
+      isCancelled = true
+    }
   }, [id])
 
   // Fetch hadiths based on filters and pagination
@@ -219,53 +286,73 @@ export default function BookReaderPage({ params }: { params: Promise<{ id: strin
     fetchHadiths()
   }, [id, currentPage, selectedPart, selectedPage])
 
-  function buildBookTOC(tocEntries: BookTOCEntry[]) {
-    // Build hierarchical tree from flat TOC array
-    const entryMap = new Map<number, BookTOCEntry & { children: any[] }>()
-    const roots: any[] = []
-
-    // Initialize all entries
-    tocEntries.forEach(entry => {
-      entryMap.set(entry.id, { ...entry, children: [] })
-    })
-
-    // Build hierarchy based on levels
-    tocEntries.forEach((entry, index) => {
-      const node = entryMap.get(entry.id)!
-      
-      // Find parent: look backwards for nearest entry with lower level
-      let parentIndex = -1
-      for (let i = index - 1; i >= 0; i--) {
-        if (tocEntries[i].lvl < entry.lvl) {
-          parentIndex = i
-          break
-        }
-      }
-      
-      if (parentIndex >= 0) {
-        const parent = entryMap.get(tocEntries[parentIndex].id)
-        if (parent) {
-          parent.children.push(node)
-        }
-      } else {
-        roots.push(node)
-      }
-    })
-
-    // Convert to TreeNode format
-    const convertToTreeNode = (node: BookTOCEntry & { children: any[] }): TreeNode => {
-      return {
-        id: `toc-${node.id}`,
-        label: node.tit,
-        data: { type: 'toc', hadithId: node.id, level: node.lvl },
-        children: node.children.length > 0 ? node.children.map(convertToTreeNode) : undefined,
-      }
+  useEffect(() => {
+    if (typeof currentHadithId !== 'number' || tocNodeMappings.length === 0) {
+      setCurrentTocNodeId(undefined)
+      return
     }
 
-    setTocTree(roots.map(convertToTreeNode))
+    const bestMatch = tocNodeMappings.reduce<{ nodeId: string | number; hadithId: number } | null>((acc, entry) => {
+      if (entry.hadithId <= currentHadithId && (!acc || entry.hadithId > acc.hadithId)) {
+        return entry
+      }
+      return acc
+    }, null)
+
+    setCurrentTocNodeId(bestMatch?.nodeId)
+  }, [currentHadithId, tocNodeMappings])
+
+  function buildBookTOC(tocEntries: BookTOCEntry[]) {
+    // Efficient O(n * L) hierarchy builder (L = max level, usually very small)
+    // This avoids the previous O(n^2) backwards scan which was too slow for large books like Sahih Bukhari.
+    type TOCNodeInternal = BookTOCEntry & { children: TOCNodeInternal[] }
+
+    const roots: TOCNodeInternal[] = []
+    const lastNodeAtLevel: Record<number, TOCNodeInternal> = {}
+
+    for (const entry of tocEntries) {
+      const level = entry.lvl || 1
+      const node: TOCNodeInternal = { ...entry, children: [] }
+
+      if (level <= 1) {
+        // Top‑level node
+        roots.push(node)
+      } else {
+        // Find the nearest parent at a lower level
+        let parent: TOCNodeInternal | undefined
+        for (let l = level - 1; l >= 1; l--) {
+          if (lastNodeAtLevel[l]) {
+            parent = lastNodeAtLevel[l]
+            break
+          }
+        }
+
+        if (parent) {
+          parent.children.push(node)
+        } else {
+          // Fallback: if no parent found, treat as root to keep TOC usable
+          roots.push(node)
+        }
+      }
+
+      lastNodeAtLevel[level] = node
+    }
+
+    const convertToTreeNode = (node: TOCNodeInternal): TreeNode => ({
+      id: `toc-${node.id}`,
+      label: node.tit,
+      data: { type: 'toc', hadithId: node.id, level: node.lvl },
+      children: node.children.length > 0 ? node.children.map(convertToTreeNode) : undefined,
+    })
+
+    const treeNodes = roots.map(convertToTreeNode)
+    setTocTree(treeNodes)
+    setTocNodeMappings(flattenTocNodes(treeNodes))
+    setIsTocLoading(false)
   }
 
   function buildTOC(hadiths: Array<{ part: string | null; page: string | null }>) {
+    setTocNodeMappings([])
     const structure: TOCStructure = { parts: new Map() }
     
     // Build structure from distinct part/page combinations
@@ -292,6 +379,22 @@ export default function BookReaderPage({ params }: { params: Promise<{ id: strin
     }))
 
     setTocTree(tree)
+  }
+
+  function flattenTocNodes(nodes: TreeNode[]): Array<{ nodeId: string | number; hadithId: number }> {
+    const flattened: Array<{ nodeId: string | number; hadithId: number }> = []
+
+    const traverse = (node: TreeNode) => {
+      const hadithId = node.data?.hadithId
+      if (typeof hadithId === 'number') {
+        flattened.push({ nodeId: node.id, hadithId })
+      }
+
+      node.children?.forEach(traverse)
+    }
+
+    nodes.forEach(traverse)
+    return flattened
   }
 
   function handleTOCSelect(node: TreeNode) {
@@ -335,14 +438,43 @@ export default function BookReaderPage({ params }: { params: Promise<{ id: strin
     setCurrentPage(1)
   }
 
+  // Swipe handlers for mobile navigation
+  const handleTouchStart = (e: React.TouchEvent) => {
+    touchStartX.current = e.touches[0].clientX
+  }
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    touchEndX.current = e.touches[0].clientX
+  }
+
+  const handleTouchEnd = () => {
+    const swipeDistance = touchStartX.current - touchEndX.current
+    const minSwipeDistance = 50
+
+    if (Math.abs(swipeDistance) > minSwipeDistance) {
+      if (swipeDistance > 0 && currentPage > 1) {
+        // RTL: swipe left (finger moves left) -> previous page
+        setCurrentPage((p) => Math.max(1, p - 1))
+      } else if (swipeDistance < 0 && currentPage < totalPages) {
+        // RTL: swipe right (finger moves right) -> next page
+        setCurrentPage((p) => Math.min(totalPages, p + 1))
+      }
+    }
+
+    touchStartX.current = 0
+    touchEndX.current = 0
+  }
+
+  const tocSelectedId = currentTocNodeId ?? selectedTopicId ?? (selectedPage ? undefined : selectedPart ?? undefined)
+
   const TOCContent = (
-    <div className="h-full flex flex-col">
+    <div className="h-full flex flex-col font-toc">
       <div className="p-4 border-b border-border">
-        <h3 className="font-bold font-arabic-sans mb-2">جدول المحتويات</h3>
+        <h3 className="font-bold mb-2">جدول المحتويات</h3>
         {(selectedPart || selectedPage || selectedTopicId) && (
           <button
             onClick={clearFilter}
-            className="text-sm text-accent hover:underline font-arabic-sans"
+            className="text-sm text-accent hover:underline"
           >
             إزالة التصفية
           </button>
@@ -350,11 +482,27 @@ export default function BookReaderPage({ params }: { params: Promise<{ id: strin
       </div>
       <div className="flex-1 overflow-y-auto p-4">
         {isTocLoading ? (
-          <div className="flex items-center justify-center h-32">
-            <div className="text-muted-foreground font-arabic-sans">جارٍ تحميل الفهرس...</div>
+          <div className="flex flex-col items-center justify-center h-32 space-y-2">
+            <div className="w-8 h-8 border-4 border-accent border-t-transparent rounded-full animate-spin"></div>
+            <div className="text-muted-foreground text-sm">جارٍ تحميل الفهرس...</div>
+          </div>
+        ) : tocError ? (
+          <div className="flex flex-col items-center justify-center h-32 space-y-2 text-center">
+            <div className="text-destructive">{tocError}</div>
+            <button 
+              onClick={() => window.location.reload()} 
+              className="text-sm text-accent hover:underline"
+            >
+              إعادة المحاولة
+            </button>
           </div>
         ) : (
-          <Tree nodes={tocTree} selectedId={selectedTopicId || (selectedPage ? undefined : selectedPart || undefined)} onSelect={handleTOCSelect} />
+          <Tree 
+            nodes={tocTree} 
+            selectedId={tocSelectedId} 
+            onSelect={handleTOCSelect}
+            labelClassName="font-toc"
+          />
         )}
       </div>
     </div>
@@ -401,8 +549,81 @@ export default function BookReaderPage({ params }: { params: Promise<{ id: strin
           </div>
         </div>
 
-        {/* Content Area */}
-        <div className="flex-1 overflow-y-auto p-4 md:p-8">
+        {/* Navigation Buttons for Desktop - Top positioned (no page counter in between) */}
+        {totalPages > 1 && (
+          <div className="hidden md:flex items-center justify-center gap-8 border-b border-border bg-muted/30 px-4 py-3">
+            <button
+              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+              disabled={currentPage === 1}
+              className={cn(
+                "flex items-center gap-2 px-4 py-2 rounded-lg",
+                "bg-accent/90 text-accent-foreground font-arabic-sans",
+                "hover:bg-accent transition-all",
+                "disabled:opacity-50 disabled:cursor-not-allowed"
+              )}
+              aria-label="السابق"
+            >
+              <ChevronRight className="w-5 h-5" />
+              السابق
+            </button>
+
+            <button
+              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+              disabled={currentPage === totalPages}
+              className={cn(
+                "flex items-center gap-2 px-4 py-2 rounded-lg",
+                "bg-accent/90 text-accent-foreground font-arabic-sans",
+                "hover:bg-accent transition-all",
+                "disabled:opacity-50 disabled:cursor-not-allowed"
+              )}
+              aria-label="التالي"
+            >
+              التالي
+              <ChevronLeft className="w-5 h-5" />
+            </button>
+          </div>
+        )}
+
+        {/* Mobile navigation bar (icon-only previous/next buttons) */}
+        {totalPages > 1 && (
+          <div className="md:hidden sticky top-0 z-10 bg-card/95 backdrop-blur-sm border-b border-border px-4 py-1 flex items-center justify-between w-full">
+            <button
+              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+              disabled={currentPage === 1}
+              className={cn(
+                "p-2 rounded-full flex items-center justify-center",
+                "bg-accent/90 text-accent-foreground",
+                "hover:bg-accent transition-all",
+                "disabled:opacity-40 disabled:cursor-not-allowed"
+              )}
+              aria-label="السابق"
+            >
+              <ChevronRight className="w-5 h-5" />
+            </button>
+
+            <button
+              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+              disabled={currentPage === totalPages}
+              className={cn(
+                "p-2 rounded-full flex items-center justify-center",
+                "bg-accent/90 text-accent-foreground",
+                "hover:bg-accent transition-all",
+                "disabled:opacity-40 disabled:cursor-not-allowed"
+              )}
+              aria-label="التالي"
+            >
+              <ChevronLeft className="w-5 h-5" />
+            </button>
+          </div>
+        )}
+
+        {/* Content Area with Swipe Support */}
+        <div 
+          className="flex-1 overflow-y-auto p-4 md:p-8"
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
+        >
           {isLoading ? (
             <div className="space-y-4">
               {Array.from({ length: 3 }).map((_, i) => (
@@ -429,7 +650,7 @@ export default function BookReaderPage({ params }: { params: Promise<{ id: strin
                       {hadith.part && <span>الجزء: {hadith.part}</span>}
                       {hadith.page && <span>الصفحة: {hadith.page}</span>}
                     </div>
-                    <div className="text-lg leading-loose space-y-2">
+                    <div className="text-2xl md:text-3xl leading-[2.1] space-y-3 font-book">
                       {processedText.map((line, index) => (
                         <p key={index} className="text-right">
                           {line.trim()}
@@ -443,50 +664,6 @@ export default function BookReaderPage({ params }: { params: Promise<{ id: strin
           )}
         </div>
 
-        {/* Premium Floating Navigation Arrows */}
-        {totalPages > 1 && (
-          <>
-            {/* Next Button - Left Corner */}
-            <button
-              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-              disabled={currentPage === totalPages}
-              className={cn(
-                "fixed left-4 top-1/2 -translate-y-1/2 z-20",
-                "w-12 h-12 md:w-14 md:h-14 rounded-full",
-                "bg-accent/90 backdrop-blur-md text-accent-foreground",
-                "shadow-lg hover:shadow-xl",
-                "flex items-center justify-center",
-                "transition-all duration-300 ease-out",
-                "hover:scale-110 hover:bg-accent active:scale-95",
-                "disabled:opacity-0 disabled:pointer-events-none",
-                "group"
-              )}
-              aria-label="التالي"
-            >
-              <ChevronLeft className="w-6 h-6 md:w-7 md:h-7 transition-transform group-hover:translate-x-0.5" />
-            </button>
-
-            {/* Previous Button - Right Corner */}
-            <button
-              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-              disabled={currentPage === 1}
-              className={cn(
-                "fixed right-4 top-1/2 -translate-y-1/2 z-20",
-                "w-12 h-12 md:w-14 md:h-14 rounded-full",
-                "bg-accent/90 backdrop-blur-md text-accent-foreground",
-                "shadow-lg hover:shadow-xl",
-                "flex items-center justify-center",
-                "transition-all duration-300 ease-out",
-                "hover:scale-110 hover:bg-accent active:scale-95",
-                "disabled:opacity-0 disabled:pointer-events-none",
-                "group"
-              )}
-              aria-label="السابق"
-            >
-              <ChevronRight className="w-6 h-6 md:w-7 md:h-7 transition-transform group-hover:-translate-x-0.5" />
-            </button>
-          </>
-        )}
       </div>
 
       {/* Desktop Sidebar */}

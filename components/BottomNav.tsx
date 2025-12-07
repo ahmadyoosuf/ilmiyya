@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Home, BookOpen, List, Search, Download, Heart } from 'lucide-react'
+import { Home, BookOpen, List, Search, Download, Info, Heart } from 'lucide-react'
 
 const navItems = [
   { href: '/', label: 'الرئيسية', icon: Home },
@@ -10,6 +10,7 @@ const navItems = [
   { href: '/books', label: 'الكتب', icon: BookOpen },
   { href: '/search', label: 'البحث', icon: Search },
   { href: '/download', label: 'سطح المكتب', icon: Download },
+  { href: '/about', label: 'حول', icon: Info },
   { href: '/donate', label: 'تبرع', icon: Heart },
 ]
 
