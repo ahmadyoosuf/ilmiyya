@@ -49,6 +49,9 @@ const nextConfig = {
 
   // Enable React strict mode
   reactStrictMode: true,
+
+  // Cache components for better performance
+  cacheComponents: true,
 }
 
 export default nextConfig
