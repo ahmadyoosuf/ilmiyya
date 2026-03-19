@@ -10,6 +10,7 @@ import { useTopicsData } from '@/hooks/use-topics-data'
 import { Search, X, Loader2 } from 'lucide-react'
 import Link from 'next/link'
 import { cn } from '@/lib/utils'
+import { AdvancedTopicSearch, AdvancedSearchTrigger } from '@/components/AdvancedTopicSearch'
 
 type Topic = Database['public']['Tables']['topics']['Row']
 
@@ -43,6 +44,9 @@ function TopicsPageContent() {
   const [searchResults, setSearchResults] = useState<BreadcrumbTopic[]>([])
   const [isSearching, setIsSearching] = useState(false)
   const [searchDebounceTimer, setSearchDebounceTimer] = useState<NodeJS.Timeout | null>(null)
+  
+  // Advanced search sidebar state
+  const [advancedSearchOpen, setAdvancedSearchOpen] = useState(false)
 
   const supabase = getSupabaseBrowserClient()
   const router = useRouter()
@@ -242,7 +246,10 @@ function TopicsPageContent() {
               اختر موضوعًا من الشجرة لعرض الأحاديث المرتبطة
             </p>
 
-            {/* Mobile Search */}
+            {/* Advanced Search Trigger */}
+            <AdvancedSearchTrigger onClick={() => setAdvancedSearchOpen(true)} />
+
+            {/* Mobile Search (FTS) */}
             <div className="relative">
               <div className={cn(
                 'flex items-center gap-3 bg-muted/50 rounded-2xl px-4 py-3.5 transition-all duration-200',
@@ -361,10 +368,20 @@ function TopicsPageContent() {
         </div>
       </div>
 
+      {/* Advanced Search Sidebar (shared by mobile and desktop) */}
+      <AdvancedTopicSearch
+        open={advancedSearchOpen}
+        onOpenChange={setAdvancedSearchOpen}
+      />
+
       {/* Desktop View */}
       <div className="hidden md:flex min-h-screen flex-col overflow-hidden bg-background">
         <div className="flex-1 overflow-y-auto p-8 flex items-start justify-center pt-12">
           <div className="w-full max-w-5xl animate-in fade-in slide-in-from-bottom-4 duration-500">
+            {/* Desktop Advanced Search Trigger */}
+            <div className="flex items-center justify-end mb-4">
+              <AdvancedSearchTrigger onClick={() => setAdvancedSearchOpen(true)} />
+            </div>
             <TreeDesktop
               nodes={topicTree}
               onSelect={handleTopicSelect}
