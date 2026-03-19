@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, useRef } from 'react'
+import { useState, useCallback, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { getSupabaseBrowserClient } from '@/lib/supabase/client'
 import { Sparkles, Search, Loader2, X, ArrowLeft } from 'lucide-react'
@@ -35,12 +35,18 @@ export function AdvancedTopicSearch({ open, onOpenChange }: AdvancedTopicSearchP
   const [hasSearched, setHasSearched] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null)
   const router = useRouter()
   const supabase = getSupabaseBrowserClient()
 
-  const performSearch = useCallback(async () => {
-    const trimmed = query.trim()
-    if (!trimmed) return
+  const performSearch = useCallback(async (searchQuery: string) => {
+    const trimmed = searchQuery.trim()
+    if (!trimmed) {
+      setResults([])
+      setHasSearched(false)
+      setError(null)
+      return
+    }
 
     setIsSearching(true)
     setHasSearched(true)
@@ -68,11 +74,27 @@ export function AdvancedTopicSearch({ open, onOpenChange }: AdvancedTopicSearchP
     } finally {
       setIsSearching(false)
     }
-  }, [query])
+  }, [])
+
+  // Debounced search handler
+  useEffect(() => {
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current)
+    }
+
+    debounceTimerRef.current = setTimeout(() => {
+      performSearch(query)
+    }, 300)
+
+    return () => {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current)
+      }
+    }
+  }, [query, performSearch])
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    performSearch()
   }
 
   const handleResultClick = useCallback(async (result: SemanticResult) => {
@@ -90,14 +112,6 @@ export function AdvancedTopicSearch({ open, onOpenChange }: AdvancedTopicSearchP
       router.push(`/topics?parentId=${result.id}`)
     }
   }, [supabase, router, onOpenChange])
-
-  const clearSearch = () => {
-    setQuery('')
-    setResults([])
-    setHasSearched(false)
-    setError(null)
-    inputRef.current?.focus()
-  }
 
   const getScoreBadge = (result: SemanticResult) => {
     const score = result.hybrid_score ?? result.semantic_score ?? 0
@@ -136,7 +150,11 @@ export function AdvancedTopicSearch({ open, onOpenChange }: AdvancedTopicSearchP
                 'flex items-center gap-2.5 bg-muted/50 rounded-xl px-3.5 py-2.5 transition-all duration-200',
                 'focus-within:bg-muted focus-within:ring-2 focus-within:ring-accent/20'
               )}>
-                <Search className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                {isSearching ? (
+                  <Loader2 className="w-4 h-4 text-accent animate-spin flex-shrink-0" />
+                ) : (
+                  <Search className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                )}
                 <input
                   ref={inputRef}
                   type="text"
@@ -149,7 +167,13 @@ export function AdvancedTopicSearch({ open, onOpenChange }: AdvancedTopicSearchP
                 {query && (
                   <button
                     type="button"
-                    onClick={clearSearch}
+                    onClick={() => {
+                      setQuery('')
+                      setResults([])
+                      setHasSearched(false)
+                      setError(null)
+                      inputRef.current?.focus()
+                    }}
                     className="p-0.5 hover:bg-background/80 rounded-md transition-colors"
                   >
                     <X className="w-3.5 h-3.5 text-muted-foreground" />
@@ -157,22 +181,6 @@ export function AdvancedTopicSearch({ open, onOpenChange }: AdvancedTopicSearchP
                 )}
               </div>
             </div>
-            <button
-              type="submit"
-              disabled={!query.trim() || isSearching}
-              className={cn(
-                'px-4 py-2.5 rounded-xl font-arabic-sans font-bold text-sm transition-all',
-                'bg-accent text-accent-foreground',
-                'hover:opacity-90 active:scale-95',
-                'disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100'
-              )}
-            >
-              {isSearching ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                'بحث'
-              )}
-            </button>
           </form>
         </div>
 

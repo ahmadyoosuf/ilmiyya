@@ -6,8 +6,10 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
-
-  // SEO-optimized headers
+  trailingSlash: false,
+  compress: true,
+  poweredByHeader: false,
+  reactStrictMode: true,
   async headers() {
     return [
       {
@@ -37,18 +39,6 @@ const nextConfig = {
       },
     ]
   },
-
-  // Trailing slash consistency
-  trailingSlash: false,
-
-  // Compress responses
-  compress: true,
-
-  // Remove powered by header
-  poweredByHeader: false,
-
-  // Enable React strict mode
-  reactStrictMode: true,
 }
 
 export default nextConfig
