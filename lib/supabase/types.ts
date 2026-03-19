@@ -171,6 +171,41 @@ export type Database = {
           },
         ]
       }
+      topic_embeddings: {
+        Row: {
+          content_hash: string
+          embedding: string
+          model: string
+          source_text: string
+          topic_id: number
+          updated_at: string
+        }
+        Insert: {
+          content_hash: string
+          embedding: string
+          model?: string
+          source_text: string
+          topic_id: number
+          updated_at?: string
+        }
+        Update: {
+          content_hash?: string
+          embedding?: string
+          model?: string
+          source_text?: string
+          topic_id?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "topic_embeddings_topic_id_fkey"
+            columns: ["topic_id"]
+            isOneToOne: true
+            referencedRelation: "topics"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       visits: {
         Row: {
           created_at: string
@@ -191,7 +226,26 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      match_topics_hybrid: {
+        Args: {
+          query_embedding_text: string
+          query_text?: string
+          match_count?: number
+          match_offset?: number
+          semantic_weight?: number
+          fts_weight?: number
+        }
+        Returns: {
+          topic_id: number
+          title: string
+          level: number
+          parent_id: number | null
+          semantic_score: number
+          fts_score: number
+          hybrid_score: number
+          total_count: number
+        }[]
+      }
     }
     Enums: {
       [_ in never]: never

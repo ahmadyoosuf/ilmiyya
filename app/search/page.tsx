@@ -8,11 +8,17 @@ import { Pagination } from '@/components/Pagination'
 import { BookCard } from '@/components/BookCard'
 import { Search as SearchIcon, BookOpen, List, FileText } from 'lucide-react'
 import Link from 'next/link'
+import { sanitizeArabicText } from '@/lib/sanitize-text'
 
 type Book = Database['public']['Tables']['books']['Row'] & {
   categories: { name_ar: string } | null
 }
 type Topic = Database['public']['Tables']['topics']['Row']
+type TopicSearchResult = Topic & {
+  semantic_score?: number
+  fts_score?: number
+  hybrid_score?: number
+}
 type Hadith = Database['public']['Tables']['hadiths']['Row'] & {
   books: { title: string } | null
 }
@@ -29,7 +35,7 @@ function SearchContent() {
   const [searchType, setSearchType] = useState<SearchType>('all')
   const [hadiths, setHadiths] = useState<Hadith[]>([])
   const [books, setBooks] = useState<Book[]>([])
-  const [topics, setTopics] = useState<Topic[]>([])
+  const [topics, setTopics] = useState<TopicSearchResult[]>([])
   const [currentPage, setCurrentPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
   const [isLoading, setIsLoading] = useState(false)
@@ -68,6 +74,43 @@ function SearchContent() {
     }
   }, [currentPage, searchType])
 
+  async function searchTopicsSemantically(searchQuery: string, page: number) {
+    const response = await fetch(
+      `/api/topics/semantic-search?q=${encodeURIComponent(searchQuery)}&limit=${ITEMS_PER_PAGE}&page=${page}`
+    )
+
+    if (!response.ok) {
+      throw new Error('Semantic topic search request failed')
+    }
+
+    const payload = await response.json()
+    const rows = (payload?.results || []) as Array<{
+      id: number
+      title: string
+      level: number
+      parent_id: number | null
+      semantic_score?: number
+      fts_score?: number
+      hybrid_score?: number
+    }>
+
+    const total = Number(payload?.total || 0)
+
+    return {
+      rows: rows.map((item) => ({
+        id: item.id,
+        title: item.title,
+        level: item.level,
+        parent_id: item.parent_id,
+        created_at: null,
+        semantic_score: item.semantic_score,
+        fts_score: item.fts_score,
+        hybrid_score: item.hybrid_score,
+      })),
+      total,
+    }
+  }
+
   async function performSearch() {
     if (!query.trim()) {
       setHasSearched(false)
@@ -76,6 +119,11 @@ function SearchContent() {
 
     setIsLoading(true)
     setHasSearched(true)
+
+    // Avoid stale cards when switching search types
+    if (searchType !== 'all' && searchType !== 'hadiths') setHadiths([])
+    if (searchType !== 'all' && searchType !== 'books') setBooks([])
+    if (searchType !== 'all' && searchType !== 'topics') setTopics([])
 
     const from = (currentPage - 1) * ITEMS_PER_PAGE
     const to = from + ITEMS_PER_PAGE - 1
@@ -111,16 +159,26 @@ function SearchContent() {
     }
 
     if (searchType === 'all' || searchType === 'topics') {
-      const { data: topicsData, count } = await supabase
-        .from('topics')
-        .select('*', { count: 'exact' })
-        .textSearch('title', query, { config: 'arabic', type: 'websearch' })
-        .range(from, to)
+      try {
+        const { rows, total } = await searchTopicsSemantically(query, currentPage)
+        setTopics(rows)
 
-      if (topicsData) {
-        setTopics(topicsData)
         if (searchType === 'topics') {
-          setTotalPages(Math.ceil((count || 0) / ITEMS_PER_PAGE))
+          setTotalPages(Math.max(1, Math.ceil(total / ITEMS_PER_PAGE)))
+        }
+      } catch {
+        // Fallback to Arabic FTS if semantic route is unavailable
+        const { data: topicsData, count } = await supabase
+          .from('topics')
+          .select('*', { count: 'exact' })
+          .textSearch('title', query, { config: 'arabic', type: 'websearch' })
+          .range(from, to)
+
+        if (topicsData) {
+          setTopics(topicsData)
+          if (searchType === 'topics') {
+            setTotalPages(Math.ceil((count || 0) / ITEMS_PER_PAGE))
+          }
         }
       }
     }
@@ -279,7 +337,7 @@ function SearchContent() {
                             </span>
                           )}
                         </div>
-                        <p className="text-lg leading-loose line-clamp-3">{hadith.nass}</p>
+                        <p className="text-lg leading-loose line-clamp-3">{sanitizeArabicText(hadith.nass)}</p>
                       </Link>
                     )
                   })}

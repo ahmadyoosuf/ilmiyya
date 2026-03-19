@@ -183,7 +183,7 @@ export function TreeDesktop({
 
           {/* Search Results Dropdown */}
           {searchResults.length > 0 && (
-            <div className="absolute top-full left-0 right-0 mt-2 bg-card border border-border rounded-xl shadow-lg max-h-96 overflow-y-auto z-50 animate-in fade-in slide-in-from-top-2 duration-200">
+            <div className="absolute top-full left-0 right-0 mt-2 bg-card border border-border rounded-xl shadow-lg max-h-96 overflow-y-auto z-[100] animate-in fade-in slide-in-from-top-2 duration-200">
               {searchResults.map((result, idx) => (
                 <button
                   key={result.id}
@@ -212,8 +212,8 @@ export function TreeDesktop({
             </div>
           )}
 
-          {isSearching && (
-            <div className="absolute top-full left-0 right-0 mt-2 bg-card border border-border rounded-xl p-4 text-center shadow-lg animate-in fade-in slide-in-from-top-2 duration-200">
+          {isSearching && searchResults.length === 0 && (
+            <div className="absolute top-full left-0 right-0 mt-2 bg-card border border-border rounded-xl p-4 text-center shadow-lg z-[100] animate-in fade-in slide-in-from-top-2 duration-200">
               <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground font-arabic-sans">
                 <Loader2 className="w-4 h-4 animate-spin" />
                 <span>جاري البحث...</span>

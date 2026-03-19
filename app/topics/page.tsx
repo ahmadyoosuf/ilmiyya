@@ -271,7 +271,7 @@ function TopicsPageContent() {
 
               {/* Mobile Search Results */}
               {searchResults.length > 0 && (
-                <div className="absolute top-full left-0 right-0 mt-2 bg-card border border-border rounded-2xl shadow-xl max-h-96 overflow-y-auto z-50 animate-in fade-in slide-in-from-top-2 duration-200">
+                <div className="absolute top-full left-0 right-0 mt-2 bg-card border border-border rounded-2xl shadow-xl max-h-96 overflow-y-auto z-[100] animate-in fade-in slide-in-from-top-2 duration-200">
                   {searchResults.map((result, idx) => (
                     <button
                       key={result.id}
@@ -300,8 +300,8 @@ function TopicsPageContent() {
                 </div>
               )}
 
-              {isSearching && (
-                <div className="absolute top-full left-0 right-0 mt-2 bg-card border border-border rounded-2xl p-4 shadow-xl animate-in fade-in slide-in-from-top-2 duration-200">
+              {isSearching && searchResults.length === 0 && (
+                <div className="absolute top-full left-0 right-0 mt-2 bg-card border border-border rounded-2xl p-4 shadow-xl z-[100] animate-in fade-in slide-in-from-top-2 duration-200">
                   <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground font-arabic-sans">
                     <Loader2 className="w-4 h-4 animate-spin" />
                     <span>جاري البحث...</span>
@@ -309,6 +309,11 @@ function TopicsPageContent() {
                 </div>
               )}
             </div>
+
+            {/* Spacer to prevent overlap when search results are shown */}
+            {searchResults.length > 0 && (
+              <div className="h-[400px] md:hidden" />
+            )}
 
             {/* Mobile Breadcrumb */}
             {breadcrumb.length > 0 && (

@@ -299,17 +299,46 @@ export function useTopicsData() {
   const searchTopics = useCallback(async (query: string, limit: number = 50): Promise<Topic[]> => {
     if (!query.trim()) return []
 
-    // Try to search in cache first for instant results
+    // Primary: multilingual semantic + hybrid ranking
+    try {
+      const response = await fetch(
+        `/api/topics/semantic-search?q=${encodeURIComponent(query)}&limit=${limit}`
+      )
+
+      if (response.ok) {
+        const payload = await response.json()
+        const semanticResults = (payload?.results || []) as Array<{
+          id: number
+          title: string
+          level: number
+          parent_id: number | null
+        }>
+
+        if (semanticResults.length > 0) {
+          return semanticResults.map((item) => ({
+            id: item.id,
+            title: item.title,
+            level: item.level,
+            parent_id: item.parent_id,
+            created_at: null,
+          }))
+        }
+      }
+    } catch {
+      // Silent fallback below
+    }
+
+    // Fallback 1: cache substring search
     const cacheResults = Array.from(cache.topics.values())
       .filter(topic => topic.title.includes(query))
       .slice(0, limit)
 
-    if (cacheResults.length >= 10) {
+    if (cacheResults.length > 0) {
       return cacheResults
     }
 
-    // Fallback to database search
-    const { data, error } = await supabase
+    // Fallback 2: ILIKE query
+    const { data } = await supabase
       .from('topics')
       .select('*')
       .ilike('title', `%${query}%`)

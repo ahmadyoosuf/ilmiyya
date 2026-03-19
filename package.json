@@ -7,6 +7,10 @@
     "dev": "next dev",
     "lint": "eslint .",
     "seed": "node scripts/seed.js",
+    "topics:embed": "node scripts/embed-topics-gemini.mjs",
+    "topics:embed:apply": "node scripts/embed-topics-gemini.mjs --apply",
+    "topics:prune-empty": "node scripts/prune-empty-topics.mjs",
+    "topics:prune-empty:apply": "node scripts/prune-empty-topics.mjs --apply",
     "start": "next start"
   },
   "dependencies": {

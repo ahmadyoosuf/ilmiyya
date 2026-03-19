@@ -1,6 +1,6 @@
+@import url("https://fonts.googleapis.com/css2?family=Scheherazade+New:wght@400;700&family=Noto+Naskh+Arabic:wght@400;600&display=swap");
 @import "tailwindcss";
 @import "tw-animate-css";
-@import url("https://fonts.googleapis.com/css2?family=Scheherazade+New:wght@400;700&family=Noto+Naskh+Arabic:wght@400;600&display=swap");
 
 /* Support for 2 premium themes with data-theme attribute */
 @custom-variant sepia (&:is([data-theme="sepia"] *));

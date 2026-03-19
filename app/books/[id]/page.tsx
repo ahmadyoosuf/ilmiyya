@@ -10,6 +10,7 @@ import { Tree, TreeNode } from '@/components/Tree'
 import { ChevronLeft, ChevronRight, Menu, X } from 'lucide-react'
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet'
 import { cn } from '@/lib/utils'
+import { sanitizeArabicText } from '@/lib/sanitize-text'
 
 type Book = Database['public']['Tables']['books']['Row']
 type Hadith = Database['public']['Tables']['hadiths']['Row']
@@ -469,7 +470,7 @@ export default function BookReaderPage({ params }: { params: Promise<{ id: strin
 
   const TOCContent = (
     <div className="h-full flex flex-col font-toc">
-      <div className="p-4 border-b border-border">
+      <div className="p-4 pl-12 border-b border-border">
         <h3 className="font-bold mb-2">جدول المحتويات</h3>
         {(selectedPart || selectedPage || selectedTopicId) && (
           <button
@@ -517,14 +518,15 @@ export default function BookReaderPage({ params }: { params: Promise<{ id: strin
           <div className="border-b border-border bg-muted/50 px-4 py-2 flex items-center gap-2">
             <Link
               href={backLink}
-              className="inline-flex items-center gap-2 text-accent hover:text-accent/80 transition-colors text-sm font-arabic-sans"
+              className="inline-flex items-center gap-2 text-accent hover:text-accent/80 transition-colors text-sm font-arabic-sans flex-1"
             >
               <ChevronRight className="w-4 h-4" />
               {backLink.includes('/search') ? 'رجوع إلى نتائج البحث' : 'رجوع إلى الموضوع'}
             </Link>
             <button
               onClick={() => setBackLink(null)}
-              className="ml-auto p-1 hover:bg-muted rounded transition-colors"
+              className="p-2 hover:bg-muted rounded transition-colors flex-shrink-0"
+              aria-label="إغلاق"
             >
               <X className="w-4 h-4 text-muted-foreground" />
             </button>
@@ -639,9 +641,10 @@ export default function BookReaderPage({ params }: { params: Promise<{ id: strin
           ) : (
             <div className="max-w-4xl mx-auto space-y-6">
               {hadiths.map((hadith) => {
-                // Process the hadith text: handle \r for line breaks
+                // Process the hadith text: handle \r for line breaks and sanitize
                 const processedText = hadith.nass
                   .split('\r') // Split by \r to create line breaks
+                  .map(line => sanitizeArabicText(line)) // Sanitize each line
                   .filter(line => line.trim()) // Remove empty lines
                 
                 return (
@@ -653,7 +656,7 @@ export default function BookReaderPage({ params }: { params: Promise<{ id: strin
                     <div className="text-2xl md:text-3xl leading-[2.1] space-y-3 font-book">
                       {processedText.map((line, index) => (
                         <p key={index} className="text-right">
-                          {line.trim()}
+                          {line}
                         </p>
                       ))}
                     </div>
