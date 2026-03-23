@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, memo, useRef, TouchEvent } from 'react'
+import { useState, useCallback, memo, useRef } from 'react'
 import { ChevronRight, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { TreeNode } from './Tree'
@@ -28,12 +28,8 @@ const TreeItem = memo(({
   const isExpanded = expandedIds.has(node.id)
   const isSelected = selectedId === node.id
   const [isExpanding, setIsExpanding] = useState(false)
-  const [touchStart, setTouchStart] = useState<number | null>(null)
-  const [isSwiping, setIsSwiping] = useState(false)
 
   const handleClick = async () => {
-    if (isSwiping) return
-    
     if (hasChildren) {
       onToggleExpand(node.id)
       
@@ -47,32 +43,10 @@ const TreeItem = memo(({
     }
   }
 
-  const handleTouchStart = (e: TouchEvent) => {
-    setTouchStart(e.touches[0].clientX)
-    setIsSwiping(false)
-  }
-
-  const handleTouchMove = (e: TouchEvent) => {
-    if (touchStart !== null) {
-      const diff = Math.abs(e.touches[0].clientX - touchStart)
-      if (diff > 10) {
-        setIsSwiping(true)
-      }
-    }
-  }
-
-  const handleTouchEnd = () => {
-    setTouchStart(null)
-    setTimeout(() => setIsSwiping(false), 100)
-  }
-
   return (
     <div className="select-none">
       <button
         onClick={handleClick}
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
         className={cn(
           'w-full flex items-center gap-3 py-4 px-4 rounded-2xl text-right transition-all duration-200',
           'active:scale-[0.98] touch-manipulation',

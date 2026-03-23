@@ -45,8 +45,6 @@ export default function BookReaderPage({ params }: { params: Promise<{ id: strin
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
   const [backLink, setBackLink] = useState<string | null>(null)
   const [tocError, setTocError] = useState<string | null>(null)
-  const touchStartX = useRef<number>(0)
-  const touchEndX = useRef<number>(0)
   const [tocNodeMappings, setTocNodeMappings] = useState<{ nodeId: string | number; hadithId: number }[]>([])
   const [currentTocNodeId, setCurrentTocNodeId] = useState<string | number | undefined>(undefined)
 
@@ -439,33 +437,6 @@ export default function BookReaderPage({ params }: { params: Promise<{ id: strin
     setCurrentPage(1)
   }
 
-  // Swipe handlers for mobile navigation
-  const handleTouchStart = (e: React.TouchEvent) => {
-    touchStartX.current = e.touches[0].clientX
-  }
-
-  const handleTouchMove = (e: React.TouchEvent) => {
-    touchEndX.current = e.touches[0].clientX
-  }
-
-  const handleTouchEnd = () => {
-    const swipeDistance = touchStartX.current - touchEndX.current
-    const minSwipeDistance = 50
-
-    if (Math.abs(swipeDistance) > minSwipeDistance) {
-      if (swipeDistance > 0 && currentPage > 1) {
-        // RTL: swipe left (finger moves left) -> previous page
-        setCurrentPage((p) => Math.max(1, p - 1))
-      } else if (swipeDistance < 0 && currentPage < totalPages) {
-        // RTL: swipe right (finger moves right) -> next page
-        setCurrentPage((p) => Math.min(totalPages, p + 1))
-      }
-    }
-
-    touchStartX.current = 0
-    touchEndX.current = 0
-  }
-
   const tocSelectedId = currentTocNodeId ?? selectedTopicId ?? (selectedPage ? undefined : selectedPart ?? undefined)
 
   const TOCContent = (
@@ -619,12 +590,9 @@ export default function BookReaderPage({ params }: { params: Promise<{ id: strin
           </div>
         )}
 
-        {/* Content Area with Swipe Support */}
+        {/* Content Area */}
         <div 
           className="flex-1 overflow-y-auto p-4 md:p-8"
-          onTouchStart={handleTouchStart}
-          onTouchMove={handleTouchMove}
-          onTouchEnd={handleTouchEnd}
         >
           {isLoading ? (
             <div className="space-y-4">
