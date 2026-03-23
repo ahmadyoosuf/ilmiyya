@@ -3,6 +3,7 @@ import { Amiri, Tajawal, Inter } from "next/font/google"
 import { Analytics } from "@vercel/analytics/next"
 import { Header } from "@/components/Header"
 import { BottomNav } from "@/components/BottomNav"
+import { RootLayoutClient } from "@/components/RootLayoutClient"
 import "./globals.css"
 
 const amiri = Amiri({
@@ -508,12 +509,13 @@ export default function RootLayout({
         <meta name="indexnow-key" content="ilmiyya-2024-seo-key" />
       </head>
       <body className={`${amiri.variable} ${tajawal.variable} ${inter.variable} font-arabic antialiased`}>
-        <Header />
-        <main className="pb-24 md:pb-0 min-h-screen">{children}</main>
-        <BottomNav />
+        <RootLayoutClient>
+          <Header />
+          <main className="pb-24 md:pb-0 min-h-screen">{children}</main>
+          <BottomNav />
+        </RootLayoutClient>
         <Analytics />
       </body>
     </html>
   )
 }
-l
