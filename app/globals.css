@@ -412,6 +412,18 @@
     scroll-behavior: smooth;
   }
 
+  /*
+   * iOS Safari only: add safe-area-inset-bottom on top of the base pb-24.
+   * @supports (-webkit-touch-callout: none) matches iOS Safari exclusively —
+   * Android Chrome does not support -webkit-touch-callout so this block is
+   * completely ignored there, keeping Android at the plain pb-24 (6rem).
+   */
+  @supports (-webkit-touch-callout: none) {
+    .home-page-content {
+      padding-bottom: calc(6rem + env(safe-area-inset-bottom)) !important;
+    }
+  }
+
   /* Touch-friendly mobile tap highlight */
   @media (max-width: 768px) {
     * {
