@@ -97,7 +97,7 @@ export default async function HomePage() {
         dangerouslySetInnerHTML={{ __html: JSON.stringify(homeJsonLd) }}
       />
 
-      <div className="min-h-screen flex flex-col items-center md:justify-center px-4 pt-6 md:py-12" style={{ paddingBottom: 'max(7rem, calc(4rem + env(safe-area-inset-bottom)))' }}>
+      <div className="min-h-screen flex flex-col items-center md:justify-center px-4 pt-6 pb-24 md:py-12" style={{ paddingBottom: 'calc(6rem + env(safe-area-inset-bottom))' }}>
         <div className="max-w-4xl w-full space-y-6 md:space-y-12 animate-fade-in">
           {/* Hero Section */}
           <div className="text-center space-y-3 md:space-y-6">
