@@ -97,10 +97,14 @@ export default async function HomePage() {
         dangerouslySetInnerHTML={{ __html: JSON.stringify(homeJsonLd) }}
       />
 
-      <div className="min-h-screen flex flex-col items-center justify-center px-4 pt-4 pb-28 md:py-12 md:pb-12">
+      <div className="min-h-screen flex flex-col items-center justify-center px-4 pt-4 md:py-12 md:pb-12" style={{ paddingBottom: 'max(7rem, calc(4rem + env(safe-area-inset-bottom)))' }}>
         <div className="max-w-4xl w-full space-y-6 md:space-y-12 animate-fade-in">
           {/* Hero Section */}
           <div className="text-center space-y-3 md:space-y-6">
+            {/* Elegant Arabic opener — fills top space on mobile without being cringe */}
+            <p className="text-base md:hidden text-muted-foreground/70 font-arabic tracking-widest" dir="rtl" aria-hidden="true">
+              بِسْمِ ٱللَّٰهِ ٱلرَّحْمَٰنِ ٱلرَّحِيمِ
+            </p>
             <h1 className="text-5xl md:text-6xl lg:text-7xl font-bold text-foreground">
               المكتبة العلمية
             </h1>
