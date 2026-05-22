@@ -2,9 +2,9 @@
 
 import { useState, useEffect } from 'react'
 import { Download, ChevronDown, ChevronUp, Monitor, Shield, Zap } from 'lucide-react'
-import { Language, getLanguageByCode } from '@/lib/i18n/types'
+import { getLanguageByCode } from '@/lib/i18n/types'
 import { downloadTranslations } from '@/lib/i18n/translations'
-import { LanguageSwitcher } from '@/components/LanguageSwitcher'
+import { useLanguage } from '@/components/LanguageProvider'
 
 const DOWNLOAD_LINKS = {
   '64bit': 'https://www.dropbox.com/scl/fi/gpxrcfwe80tcxjj4iyxxy/ilmiyya-64-bit.zip?rlkey=ovqo29rr6xp4jhwh9lo7nrle8&st=qynkdoci&dl=1',
@@ -104,7 +104,7 @@ function detectSystemArchitecture(): SystemArchitecture {
 }
 
 export default function DownloadPage() {
-  const [language, setLanguage] = useState<Language>('en')
+  const { language } = useLanguage()
   const [detectedArch, setDetectedArch] = useState<SystemArchitecture>(null)
   const [showAllDownloads, setShowAllDownloads] = useState(false)
 
@@ -139,7 +139,7 @@ export default function DownloadPage() {
         dir={langConfig.dir}
       >
         <div className="space-y-6 md:space-y-8 animate-entrance">
-          {/* Header with Language Switcher */}
+          {/* Header */}
           <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4">
             <div className="flex-1">
               <h1 className={`text-3xl sm:text-4xl md:text-5xl font-bold mb-3 md:mb-4 ${langConfig.dir === 'rtl' ? 'font-arabic' : ''}`}>
@@ -148,9 +148,6 @@ export default function DownloadPage() {
               <p className={`text-base md:text-lg text-muted-foreground ${langConfig.dir === 'rtl' ? 'font-arabic-sans' : ''}`}>
                 {t.description}
               </p>
-            </div>
-            <div className="self-start sm:self-auto">
-              <LanguageSwitcher currentLanguage={language} onLanguageChange={setLanguage} />
             </div>
           </div>
 

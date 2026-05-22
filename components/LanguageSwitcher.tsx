@@ -1,41 +1,42 @@
 'use client'
 
-import { Language, languages } from '@/lib/i18n/types'
-import { Globe } from 'lucide-react'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
+import { Language } from '@/lib/i18n/types'
+import { useLanguage } from '@/components/LanguageProvider'
+import { cn } from '@/lib/utils'
 
-interface LanguageSwitcherProps {
-  currentLanguage: Language
-  onLanguageChange: (lang: Language) => void
-}
+const LANGUAGE_BUTTONS: { code: Language; label: string; title: string }[] = [
+  { code: 'ta', label: 'T', title: 'Tamil' },
+  { code: 'ar', label: 'A', title: 'Arabic' },
+  { code: 'en', label: 'E', title: 'English' },
+]
 
-export function LanguageSwitcher({ currentLanguage, onLanguageChange }: LanguageSwitcherProps) {
-  const currentLang = languages.find(l => l.code === currentLanguage) || languages[0]
-  
+export function LanguageSwitcher() {
+  const { language, setLanguage } = useLanguage()
+
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger className="flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-lg hover:bg-muted transition-colors touch-manipulation">
-        <Globe className="w-4 h-4 flex-shrink-0" />
-        <span className="text-xs sm:text-sm font-medium whitespace-nowrap">{currentLang.nativeName}</span>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="min-w-[160px]">
-        {languages.map((lang) => (
-          <DropdownMenuItem
-            key={lang.code}
-            onClick={() => onLanguageChange(lang.code)}
-            className={`cursor-pointer touch-manipulation ${currentLanguage === lang.code ? 'bg-accent text-accent-foreground' : ''}`}
-          >
-            <span className="font-medium">{lang.nativeName}</span>
-            <span className="text-muted-foreground text-xs ml-2">({lang.name})</span>
-          </DropdownMenuItem>
-        ))}
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <div
+      className="flex items-center rounded-lg border border-border bg-muted/40 p-0.5"
+      role="group"
+      aria-label="Language"
+    >
+      {LANGUAGE_BUTTONS.map(({ code, label, title }) => (
+        <button
+          key={code}
+          type="button"
+          title={title}
+          aria-label={title}
+          aria-pressed={language === code}
+          onClick={() => setLanguage(code)}
+          className={cn(
+            'min-w-[2rem] px-2 py-1 text-xs font-semibold rounded-md transition-colors touch-manipulation',
+            language === code
+              ? 'bg-accent text-accent-foreground shadow-sm'
+              : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+          )}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
   )
 }
-

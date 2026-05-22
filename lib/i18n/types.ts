@@ -15,7 +15,7 @@ export const languages: LanguageOption[] = [
 ]
 
 export const getLanguageByCode = (code: string): LanguageOption => {
-  return languages.find(lang => lang.code === code) || languages[0]
+  return languages.find(lang => lang.code === code) || languages.find(lang => lang.code === 'ar')!
 }
 
 

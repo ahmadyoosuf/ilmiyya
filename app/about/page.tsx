@@ -1,9 +1,8 @@
 'use client'
 
-import { useState } from 'react'
 import { Language, getLanguageByCode } from '@/lib/i18n/types'
+import { useLanguage } from '@/components/LanguageProvider'
 import { cn } from '@/lib/utils'
-import { LanguageSwitcher } from '@/components/LanguageSwitcher'
 
 const CONTACT_EMAILS = ['tameemsdev@gmail.com', 'ahmad@ahmadyoosuf.com']
 
@@ -118,7 +117,7 @@ const ABOUT_CONTENT: Record<Language, AboutCopy> = {
 }
 
 export default function AboutPage() {
-  const [language, setLanguage] = useState<Language>('ar')
+  const { language } = useLanguage()
   const content = ABOUT_CONTENT[language]
   const langConfig = getLanguageByCode(language)
 
@@ -134,7 +133,6 @@ export default function AboutPage() {
         <div className="container mx-auto px-4 py-10 space-y-8 md:py-16">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <h1 className="text-3xl md:text-4xl font-bold">{content.title}</h1>
-            <LanguageSwitcher currentLanguage={language} onLanguageChange={setLanguage} />
           </div>
 
           <div

@@ -3,16 +3,16 @@
 import { useState } from 'react'
 import Image from 'next/image'
 import { Download, Heart } from 'lucide-react'
-import { Language, getLanguageByCode } from '@/lib/i18n/types'
+import { getLanguageByCode } from '@/lib/i18n/types'
 import { donateTranslations } from '@/lib/i18n/translations'
-import { LanguageSwitcher } from '@/components/LanguageSwitcher'
+import { useLanguage } from '@/components/LanguageProvider'
 
 const UPI_ID = 'thamim1982@oksbi'
 const UPI_LINK = `upi://pay?pa=${UPI_ID}&cu=INR`
 const QR_CODE_PATH = '/qr-code.png'
 
 export default function DonatePage() {
-  const [language, setLanguage] = useState<Language>('en')
+  const { language } = useLanguage()
   const [showThankYou, setShowThankYou] = useState(false)
   
   const t = donateTranslations[language]
@@ -41,7 +41,7 @@ export default function DonatePage() {
       dir={langConfig.dir}
     >
       <div className="space-y-6 md:space-y-8 animate-entrance">
-        {/* Header with Language Switcher */}
+        {/* Header */}
         <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4">
           <div className="flex-1">
             <div className="flex items-center gap-2 sm:gap-3 mb-3 md:mb-4">
@@ -53,9 +53,6 @@ export default function DonatePage() {
             <p className={`text-base md:text-lg text-muted-foreground ${langConfig.dir === 'rtl' ? 'font-arabic-sans' : ''}`}>
               {t.description}
             </p>
-          </div>
-          <div className="self-start sm:self-auto">
-            <LanguageSwitcher currentLanguage={language} onLanguageChange={setLanguage} />
           </div>
         </div>
         
